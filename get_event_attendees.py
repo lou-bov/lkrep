@@ -1,7 +1,8 @@
 import os
 import sys
+import pymysql
+import pymysql.cursors
 from dotenv import dotenv_values
-import mysql.connector
 
 env_path = os.path.expanduser("~/.f5-mysql.env")
 if not os.path.exists(env_path):
@@ -10,32 +11,36 @@ if not os.path.exists(env_path):
 
 cfg = dotenv_values(env_path)
 
-conn = mysql.connector.connect(
-    host=cfg.get("DB_HOST", "localhost"),
-    port=int(cfg.get("DB_PORT", 3306)),
-    user=cfg["DB_USER"],
-    password=cfg["DB_PASSWORD"],
-    database=cfg["DB_NAME"],
+conn = pymysql.connect(
+    host=cfg.get("HOST", "localhost"),
+    port=int(cfg.get("PORT", 3306)),
+    user=cfg["USER"],
+    password=cfg["PASSWORD"],
+    database=cfg["DATABASE"],
+    cursorclass=pymysql.cursors.DictCursor,
+    ssl_disabled=True,
 )
 
-cursor = conn.cursor(dictionary=True)
-
-cursor.execute("""
-    SELECT m.id, m.name, m.email
-    FROM event_attendees ea
-    JOIN members m ON m.id = ea.member_id
-    WHERE ea.event_id = 5674
-      AND ea.status = 'attending'
-    ORDER BY m.name
-""")
-
-rows = cursor.fetchall()
-cursor.close()
-conn.close()
+with conn:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                p.id         AS person_id,
+                p.name       AS name,
+                p.email      AS email
+            FROM potential_participants pp
+            JOIN purchases      pu ON pu.id      = pp.purchase_id
+            JOIN jobs            j  ON j.id       = pu.job_id
+            JOIN persons         p  ON p.id       = j.person_id
+            WHERE pp.event_id = 5674
+              AND pp.showed   = 1
+            ORDER BY p.name
+        """)
+        rows = cur.fetchall()
 
 if not rows:
     print("No attending members found for event 5674.")
 else:
     print(f"Attending members for event 5674 ({len(rows)} total):\n")
     for r in rows:
-        print(f"  {r['name']} <{r['email']}>")
+        print(f"  [{r['person_id']}] {r['name']}  <{r['email']}>")
