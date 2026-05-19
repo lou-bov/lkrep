@@ -1,15 +1,62 @@
 import os
+import subprocess
 import sys
-import pymysql
-import pymysql.cursors
-from dotenv import dotenv_values
 
-env_path = os.path.expanduser("~/.f5-mysql.env")
-if not os.path.exists(env_path):
-    print(f"Error: credentials file not found at {env_path}", file=sys.stderr)
+# 1. pymysql installed?
+try:
+    import pymysql
+    import pymysql.cursors
+except ImportError:
+    print("Error: pymysql not found. Run:  pip install pymysql", file=sys.stderr)
     sys.exit(1)
 
-cfg = dotenv_values(env_path)
+# 2. python-dotenv installed?
+try:
+    from dotenv import dotenv_values
+except ImportError:
+    print("Error: python-dotenv not found. Run:  pip install python-dotenv", file=sys.stderr)
+    sys.exit(1)
+
+# 3. Credentials file exists?
+_env_path = os.path.expanduser("~/.f5-mysql.env")
+if not os.path.exists(_env_path):
+    print(f"Error: credentials file not found at {_env_path}", file=sys.stderr)
+    print("Create it with:", file=sys.stderr)
+    print("  HOST=10.231.22.121", file=sys.stderr)
+    print("  PORT=3306", file=sys.stderr)
+    print("  USER=<your-username>", file=sys.stderr)
+    print("  PASSWORD=<your-password>", file=sys.stderr)
+    print("  DATABASE=f5_erp", file=sys.stderr)
+    print("(ask Max for your username/password)", file=sys.stderr)
+    sys.exit(1)
+
+# 4. Cloudflare WARP running?
+def _warp_running() -> bool:
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(
+                ["tasklist", "/FI", "IMAGENAME eq Cloudflare WARP.exe"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            return "Cloudflare WARP.exe" in out
+        except Exception:
+            return False
+    else:
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-x", "warp-svc"],
+                stderr=subprocess.DEVNULL,
+            )
+            return bool(out.strip())
+        except Exception:
+            return False
+
+if not _warp_running():
+    print("Error: Cloudflare WARP is not running. Start WARP before connecting to the database.", file=sys.stderr)
+    sys.exit(1)
+
+cfg = dotenv_values(_env_path)
 
 conn = pymysql.connect(
     host=cfg.get("HOST", "localhost"),
