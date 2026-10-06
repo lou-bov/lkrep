@@ -61,6 +61,23 @@ function extractLinkedInProfile() {
   else if (/linkedin\.com\/in\//.test(window.location.href)) linkedinUrl = window.location.href.split("?")[0];
   else linkedinUrl = window.location.href;
 
+  // Resume/attachment links (e.g. CVs candidates sent via InMail or applied with).
+  const seen = new Set();
+  const cvLinks = [...document.querySelectorAll("a[href]")]
+    .filter((a) => {
+      const href = a.href;
+      if (!/^https?:/.test(href) || /linkedin\.com\/in\//.test(href) || seen.has(href)) return false;
+      const hay = `${href} ${a.textContent} ${a.getAttribute("download") || ""} ${a.getAttribute("aria-label") || ""}`;
+      const ok = a.hasAttribute("download") || /resume|résumé|\bcv\b|curriculum|attachment|\.pdf\b|\.docx?\b/i.test(hay);
+      if (ok) seen.add(href);
+      return ok;
+    })
+    .slice(0, 5)
+    .map((a) => ({
+      href: a.href,
+      text: (a.textContent.replace(/\s+/g, " ").trim() || a.getAttribute("aria-label") || a.href).slice(0, 60),
+    }));
+
   const parts = fullName.split(" ").filter(Boolean);
   return {
     firstName: parts.slice(0, -1).join(" ") || parts[0] || "",
@@ -72,5 +89,6 @@ function extractLinkedInProfile() {
     phone: phone.trim(),
     linkedinUrl,
     notes: "",
+    cvLinks,
   };
 }

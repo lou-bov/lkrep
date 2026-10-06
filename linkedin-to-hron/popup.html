@@ -1,20 +1,27 @@
 <!doctype html>
-<html lang="da">
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<title>LinkedIn → HR-ON</title>
 <style>
-  body { font: 13px/1.4 system-ui, sans-serif; width: 340px; margin: 0; padding: 12px; color: #1d1d1f; }
+  body { font: 13px/1.4 system-ui, sans-serif; width: 360px; margin: 0; padding: 12px; color: #1d1d1f; }
+  body.page { width: auto; max-width: 720px; margin: 24px auto; }
   h1 { font-size: 15px; margin: 0 0 8px; }
+  h2 { font-size: 13px; margin: 12px 0 4px; }
   label { display: block; margin-top: 6px; font-weight: 600; font-size: 12px; }
-  input, textarea { width: 100%; box-sizing: border-box; padding: 5px 6px; border: 1px solid #c7c7cc; border-radius: 4px; font: inherit; }
+  input, textarea, select { width: 100%; box-sizing: border-box; padding: 5px 6px; border: 1px solid #c7c7cc; border-radius: 4px; font: inherit; }
+  input[type=file] { border: 0; padding: 2px 0; }
   textarea { height: 50px; resize: vertical; }
   .row { display: flex; gap: 6px; }
   .row > div { flex: 1; }
   button { margin-top: 10px; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: #0a66c2; color: #fff; font-weight: 600; cursor: pointer; }
   button.secondary { background: #e5e5ea; color: #1d1d1f; }
+  button.small { width: auto; margin: 4px 4px 0 0; padding: 4px 8px; font-size: 12px; }
   .msg { margin-top: 8px; font-size: 12px; color: #555; }
-  .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #eee; }
-  .queue-item button { width: auto; margin: 0 0 0 4px; padding: 4px 8px; font-size: 12px; }
+  .cv { font-size: 12px; color: #2e7d32; margin-top: 4px; }
+  .item { padding: 8px 0; border-bottom: 1px solid #eee; }
+  .item .name { font-weight: 600; }
+  .item .meta { color: #555; font-size: 12px; }
   .hidden { display: none; }
   a { color: #0a66c2; }
 </style>
@@ -24,32 +31,49 @@
 
   <section id="linkedin" class="hidden">
     <div class="row">
-      <div><label>Fornavn</label><input id="firstName"></div>
-      <div><label>Efternavn</label><input id="lastName"></div>
+      <div><label for="firstName">First name</label><input id="firstName"></div>
+      <div><label for="lastName">Last name</label><input id="lastName"></div>
     </div>
-    <label>E-mail</label><input id="email">
-    <label>Telefon</label><input id="phone">
-    <label>Titel</label><input id="headline">
-    <label>Virksomhed</label><input id="company">
-    <label>Lokation</label><input id="location">
-    <label>LinkedIn URL</label><input id="linkedinUrl">
-    <label>Note</label><textarea id="notes"></textarea>
-    <button id="addAndOpen">Tilføj og åbn HR-ON</button>
-    <button id="add" class="secondary">Tilføj til kø</button>
+    <label for="email">Email</label><input id="email">
+    <label for="phone">Phone</label><input id="phone">
+    <label for="headline">Title</label><input id="headline">
+    <label for="company">Company</label><input id="company">
+    <label for="location">Location</label><input id="location">
+    <label for="linkedinUrl">LinkedIn URL</label><input id="linkedinUrl">
+
+    <h2>HR-ON</h2>
+    <label for="job">Job</label><input id="job" list="jobList" placeholder="Job title as shown in HR-ON">
+    <datalist id="jobList"></datalist>
+    <label for="tags">Tags (comma-separated)</label><input id="tags">
+    <label for="notes">Note</label><textarea id="notes"></textarea>
+
+    <h2>CV</h2>
+    <div id="cvLinks"></div>
+    <input type="file" id="cvFile" accept=".pdf,.doc,.docx,.rtf,.txt,.odt">
+    <div class="cv" id="cvStatus"></div>
+
+    <button id="addAndOpen">Add and open HR-ON</button>
+    <button id="add" class="secondary">Add to queue</button>
   </section>
 
   <section id="hron" class="hidden">
-    <p>Åbn siden <b>Opret kandidat</b> i HR-ON, og klik så <b>Udfyld</b> ud for kandidaten.</p>
+    <p>Open the <b>Create candidate</b> page in HR-ON, then click <b>Fill form</b> next to a candidate.</p>
+  </section>
+
+  <section id="queueSection" class="hidden">
+    <h2>Queue</h2>
     <div id="queue"></div>
   </section>
 
   <section id="other" class="hidden">
-    <p>Åbn en kandidatprofil i LinkedIn Recruiter, eller åbn HR-ON for at udfylde kandidater fra køen.</p>
-    <div id="queueCount"></div>
+    <p>Open a candidate profile in LinkedIn Recruiter, or open HR-ON to fill in candidates from the queue.</p>
   </section>
 
   <div class="msg" id="msg"></div>
-  <div class="msg"><a href="options.html" target="_blank">Indstillinger</a></div>
+  <div class="msg">
+    <a href="popup.html?view=queue" target="_blank">Open queue in a tab</a> ·
+    <a href="options.html" target="_blank">Settings</a>
+  </div>
 
   <script src="extract.js"></script>
   <script src="fill.js"></script>

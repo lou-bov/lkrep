@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="da">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>LinkedIn → HR-ON indstillinger</title>
+<title>LinkedIn → HR-ON settings</title>
 <style>
   body { font: 14px/1.5 system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
   label { display: block; font-weight: 600; margin-top: 14px; }
@@ -13,17 +13,21 @@
 </style>
 </head>
 <body>
-  <h1>LinkedIn → HR-ON</h1>
-  <label for="hronUrl">HR-ON URL der åbnes</label>
+  <h1>LinkedIn → HR-ON settings</h1>
+  <label for="hronUrl">HR-ON URL to open</label>
   <input id="hronUrl">
-  <small>Sæt den til URL'en for "Opret kandidat" i HR-ON, så slipper du for at navigere dertil hver gang.</small>
+  <small>Set this to the URL of HR-ON's "Create candidate" page to go there directly.</small>
 
-  <label for="selectors">Egne CSS-selectors (JSON, valgfri)</label>
+  <label for="defaultTags">Default tags</label>
+  <input id="defaultTags">
+  <small>Comma-separated. Pre-filled for every new candidate; you can change them per candidate.</small>
+
+  <label for="selectors">Custom CSS selectors (JSON, optional)</label>
   <textarea id="selectors"></textarea>
-  <small>Kun nødvendigt hvis et felt ikke findes automatisk. Højreklik på feltet i HR-ON → Inspicér, og find fx dets <code>name</code>.
-  Nøgler: firstName, lastName, email, phone, linkedinUrl, headline, company, location, notes.</small>
+  <small>Only needed if a field isn't found automatically. Right-click the field in HR-ON → Inspect, and use e.g. its <code>name</code>.
+  Keys: firstName, lastName, email, phone, linkedinUrl, headline, company, location, notes, job, tags, cv.</small>
 
-  <div><button id="save">Gem</button> <span id="status"></span></div>
+  <div><button id="save">Save</button> <span id="status"></span></div>
   <script src="options.js"></script>
 </body>
 </html>

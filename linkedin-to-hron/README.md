@@ -1,36 +1,48 @@
 # LinkedIn Recruiter → HR-ON
 
-Chrome-udvidelse, der opretter kandidater fra LinkedIn Recruiter i HR-ON Recruit
-(`https://recruit.hr-on.com`). Den kører i din egen browser med dine egne logins,
-så der skal ikke bruges API-nøgler eller adgangskoder.
+Browser extension for **Microsoft Edge** and **Google Chrome** that creates candidates from
+LinkedIn Recruiter in HR-ON Recruit (`https://recruit.hr-on.com`): contact details, job, tags and CV.
+It runs in your own browser with your own logins, so no API keys or passwords are needed.
 
 ## Installation
-1. Gå til `chrome://extensions` (eller `edge://extensions`).
-2. Slå **Developer mode** til.
-3. Klik **Load unpacked**, og vælg mappen `linkedin-to-hron`.
-4. Fastgør ikonet "LinkedIn → HR-ON" i værktøjslinjen.
+**Edge**
+1. Go to `edge://extensions`.
+2. Turn on **Developer mode** (bottom left).
+3. Click **Load unpacked** and choose the `linkedin-to-hron` folder.
+4. Click the puzzle icon in the toolbar and pin "LinkedIn → HR-ON".
 
-## Brug
-1. Åbn en kandidatprofil i LinkedIn Recruiter. Åbn kontaktinfo, hvis du vil have e-mail og telefon med.
-2. Klik på udvidelsen. Felterne udfyldes fra profilen; ret dem, hvis det er nødvendigt.
-3. Klik **Tilføj og åbn HR-ON**, eller **Tilføj til kø** for at samle flere kandidater.
-4. Log ind i HR-ON, og gå til siden for at oprette en kandidat.
-5. Klik på udvidelsen, og klik **Udfyld** ud for kandidaten. Felterne markeres med grønt.
-6. Tjek data, klik **Gem** i HR-ON, og klik **Fjern** for at tage kandidaten ud af køen.
+**Chrome**: the same steps, starting at `chrome://extensions`.
 
-Udvidelsen gemmer aldrig selv i HR-ON. Du godkender altid hver kandidat.
+After updating the files, click **Reload** on the extension's card.
 
-## Hvis et felt ikke bliver udfyldt
-Felterne findes automatisk ud fra deres labels (fx "Fornavn", "E-mail", "Telefon").
-Finder den ikke et felt, skal du åbne **Indstillinger** og angive en CSS-selector for feltet, fx:
+## Usage
+1. Open a candidate profile in LinkedIn Recruiter. Open the contact info if you want email and phone included.
+2. Click the extension. The fields are filled from the profile; correct them if needed.
+3. **Job**: type or pick the HR-ON job. The list is learned automatically the first time you open
+   the extension on an HR-ON page that has a job dropdown.
+4. **Tags**: comma-separated. Defaults come from Settings.
+5. **CV**: click **Fetch: …** to download a CV/attachment linked on the profile, or choose a file
+   (e.g. a CV the candidate sent you, or LinkedIn's "More → Save to PDF").
+6. Click **Add and open HR-ON**, or **Add to queue** to collect several candidates.
+7. Log in to HR-ON and open the page for creating a candidate.
+8. Click the extension and click **Fill form** next to the candidate. Filled fields are outlined in green.
+9. Check the data, click **Save** in HR-ON, then **Remove** the candidate from the queue.
+
+The extension never saves in HR-ON itself; you always approve each candidate.
+
+If the file picker closes the popup, use **Open queue in a tab** and attach the CV there.
+
+## If a field isn't filled
+Fields are found by their labels in Danish and English (e.g. "Fornavn"/"First name", "Stilling"/"Job",
+"Tags", "CV"). If one isn't found, open **Settings** and give a CSS selector for it:
 
 ```json
-{ "firstName": "input[name='firstname']", "phone": "input[name='mobile']" }
+{ "firstName": "input[name='firstname']", "job": "select[name='job_id']", "cv": "input[name='cv']" }
 ```
 
-Under Indstillinger kan du også sætte URL'en til "Opret kandidat", så den åbnes direkte.
-
-## Begrænsninger
-- LinkedIn ændrer ofte sin HTML. Mangler navn eller titel, skal selectors i `extract.js` opdateres.
-- Det er bevidst, at den kun læser den profil, du selv har åben. Masse-scraping af LinkedIn er i strid med LinkedIns brugervilkår.
-- CV-filer bliver ikke overført.
+## Limitations
+- LinkedIn changes its HTML often. If name or title are missing, update the selectors in `extract.js`.
+- It only reads the profile you have open, on purpose. Bulk scraping LinkedIn breaks LinkedIn's terms of use.
+- A CV can only be fetched when the profile links to a file (e.g. one the candidate sent or applied with).
+  Otherwise download it and choose the file.
+- If HR-ON creates the candidate first and adds job/tags/CV on a later page, run **Fill form** again on that page.

@@ -1,13 +1,23 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Recruiter → HR-ON",
-  "version": "1.0.0",
-  "description": "Opret kandidater fra LinkedIn Recruiter i HR-ON Recruit.",
-  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "version": "1.1.0",
+  "description": "Create candidates from LinkedIn Recruiter in HR-ON Recruit, with tags, job and CV.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
   "host_permissions": [
     "https://www.linkedin.com/*",
+    "https://*.licdn.com/*",
     "https://recruit.hr-on.com/*"
   ],
-  "action": { "default_popup": "popup.html", "default_title": "LinkedIn → HR-ON" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LinkedIn → HR-ON"
+  },
   "options_page": "options.html"
 }
