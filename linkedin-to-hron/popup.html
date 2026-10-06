@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px/1.4 system-ui, sans-serif; width: 340px; margin: 0; padding: 12px; color: #1d1d1f; }
+  h1 { font-size: 15px; margin: 0 0 8px; }
+  label { display: block; margin-top: 6px; font-weight: 600; font-size: 12px; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 5px 6px; border: 1px solid #c7c7cc; border-radius: 4px; font: inherit; }
+  textarea { height: 50px; resize: vertical; }
+  .row { display: flex; gap: 6px; }
+  .row > div { flex: 1; }
+  button { margin-top: 10px; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: #0a66c2; color: #fff; font-weight: 600; cursor: pointer; }
+  button.secondary { background: #e5e5ea; color: #1d1d1f; }
+  .msg { margin-top: 8px; font-size: 12px; color: #555; }
+  .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #eee; }
+  .queue-item button { width: auto; margin: 0 0 0 4px; padding: 4px 8px; font-size: 12px; }
+  .hidden { display: none; }
+  a { color: #0a66c2; }
+</style>
+</head>
+<body>
+  <h1>LinkedIn → HR-ON</h1>
+
+  <section id="linkedin" class="hidden">
+    <div class="row">
+      <div><label>Fornavn</label><input id="firstName"></div>
+      <div><label>Efternavn</label><input id="lastName"></div>
+    </div>
+    <label>E-mail</label><input id="email">
+    <label>Telefon</label><input id="phone">
+    <label>Titel</label><input id="headline">
+    <label>Virksomhed</label><input id="company">
+    <label>Lokation</label><input id="location">
+    <label>LinkedIn URL</label><input id="linkedinUrl">
+    <label>Note</label><textarea id="notes"></textarea>
+    <button id="addAndOpen">Tilføj og åbn HR-ON</button>
+    <button id="add" class="secondary">Tilføj til kø</button>
+  </section>
+
+  <section id="hron" class="hidden">
+    <p>Åbn siden <b>Opret kandidat</b> i HR-ON, og klik så <b>Udfyld</b> ud for kandidaten.</p>
+    <div id="queue"></div>
+  </section>
+
+  <section id="other" class="hidden">
+    <p>Åbn en kandidatprofil i LinkedIn Recruiter, eller åbn HR-ON for at udfylde kandidater fra køen.</p>
+    <div id="queueCount"></div>
+  </section>
+
+  <div class="msg" id="msg"></div>
+  <div class="msg"><a href="options.html" target="_blank">Indstillinger</a></div>
+
+  <script src="extract.js"></script>
+  <script src="fill.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

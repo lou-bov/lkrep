@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Recruiter → HR-ON",
+  "version": "1.0.0",
+  "description": "Opret kandidater fra LinkedIn Recruiter i HR-ON Recruit.",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://recruit.hr-on.com/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "LinkedIn → HR-ON" },
+  "options_page": "options.html"
+}
