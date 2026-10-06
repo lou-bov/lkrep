@@ -16,7 +16,11 @@
   <h1>LinkedIn → HR-ON settings</h1>
   <label for="hronUrl">HR-ON URL to open</label>
   <input id="hronUrl">
-  <small>Set this to the URL of HR-ON's "Create candidate" page to go there directly.</small>
+  <small>Opened when the job's applicant list isn't known yet. Each job's applicant list is remembered once you've opened it with the extension.</small>
+
+  <label for="fixedEmail">E-mail to use in HR-ON</label>
+  <input id="fixedEmail">
+  <small>HR-ON requires an e-mail. This address is used for every candidate. Leave empty to use the candidate's own e-mail.</small>
 
   <label for="defaultTags">Default tags</label>
   <input id="defaultTags">
@@ -25,7 +29,7 @@
   <label for="selectors">Custom CSS selectors (JSON, optional)</label>
   <textarea id="selectors"></textarea>
   <small>Only needed if a field isn't found automatically. Right-click the field in HR-ON → Inspect, and use e.g. its <code>name</code>.
-  Keys: firstName, lastName, email, phone, linkedinUrl, headline, company, location, notes, job, tags, cv.</small>
+  Keys: name, address, city, country, email, mobile, phone, notes, tags, cv.</small>
 
   <div><button id="save">Save</button> <span id="status"></span></div>
   <script src="options.js"></script>

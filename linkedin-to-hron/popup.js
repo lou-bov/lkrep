@@ -9,8 +9,19 @@ const setQueue = (queue) => chrome.storage.local.set({ queue });
 const getCv = async (id) => (await chrome.storage.local.get(`cv:${id}`))[`cv:${id}`] || null;
 const setCv = (id, cv) => chrome.storage.local.set({ [`cv:${id}`]: cv });
 const getSettings = () =>
-  chrome.storage.sync.get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "LinkedIn", selectors: {} });
+  chrome.storage.sync.get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "LinkedIn", fixedEmail: "xyz@f5.dk", selectors: {} });
 const getKnownJobs = async () => (await chrome.storage.local.get({ knownJobs: [] })).knownJobs;
+const getJobUrls = async () => (await chrome.storage.local.get({ jobUrls: {} })).jobUrls;
+
+// Finds a phone number in the CV; returns "" if none or the file can't be read.
+async function phoneFromCv(cv) {
+  try {
+    return findPhone(await cvText(cv));
+  } catch (e) {
+    console.warn("Could not read CV text", e);
+    return "";
+  }
+}
 
 let pendingCv = null; // CV picked/fetched in the LinkedIn view, saved when the candidate is added.
 
@@ -123,7 +134,17 @@ async function initLinkedIn(tab) {
   }
 
   const baseName = () => `${$("firstName").value}_${$("lastName").value}_CV`.replace(/\s+/g, "_");
-  const showCv = () => ($("cvStatus").textContent = pendingCv ? `Attached: ${pendingCv.name}` : "");
+  const showCv = async () => {
+    $("cvStatus").textContent = pendingCv ? `Attached: ${pendingCv.name}` : "";
+    if (!pendingCv) return;
+    const phone = await phoneFromCv(pendingCv);
+    if (phone && !$("phone").value.trim()) {
+      $("phone").value = phone;
+      $("cvStatus").textContent += ` · mobile from CV: ${phone}`;
+    } else if (phone && phone !== $("phone").value.replace(/[^\d+]/g, "")) {
+      $("cvStatus").textContent += ` · CV also has: ${phone}`;
+    }
+  };
   const links = profile.cvLinks || [];
   if (!links.length) {
     $("cvLinks").innerHTML =
@@ -160,13 +181,15 @@ async function initLinkedIn(tab) {
   $("add").onclick = addToQueue;
   $("addAndOpen").onclick = async () => {
     if (!(await addToQueue())) return;
+    // Go straight to the job's applicant list if we've seen it before.
     const { hronUrl } = await getSettings();
+    const jobUrl = (await getJobUrls())[$("job").value.trim()];
     const [existing] = await chrome.tabs.query({ url: "https://recruit.hr-on.com/*" });
     if (existing) {
-      await chrome.tabs.update(existing.id, { active: true });
+      await chrome.tabs.update(existing.id, { active: true, ...(jobUrl ? { url: jobUrl } : {}) });
       await chrome.windows.update(existing.windowId, { focused: true });
     } else {
-      await chrome.tabs.create({ url: hronUrl });
+      await chrome.tabs.create({ url: jobUrl || hronUrl });
     }
   };
 }
@@ -189,7 +212,7 @@ async function renderQueue(hronTab) {
     name.textContent = `${c.firstName} ${c.lastName}`.trim() + (c.company ? ` (${c.company})` : "");
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `CV: ${c.cvName || "none"}`;
+    meta.textContent = `CV: ${c.cvName || "none"} · Mobile: ${c.phone || "none"}`;
 
     // Job and tags can be adjusted here, e.g. once the HR-ON job list is known.
     const job = document.createElement("input");
@@ -218,11 +241,15 @@ async function renderQueue(hronTab) {
       try {
         const cv = await fileToCv(file.files[0]);
         await setCv(c.id, cv);
+        const phone = c.phone ? "" : await phoneFromCv(cv);
         const q = await getQueue();
         const it = q.find((x) => x.id === c.id);
-        if (it) it.cvName = c.cvName = cv.name;
+        if (it) {
+          it.cvName = c.cvName = cv.name;
+          if (phone) it.phone = c.phone = phone;
+        }
         await setQueue(q);
-        meta.textContent = `CV: ${cv.name}`;
+        meta.textContent = `CV: ${cv.name}` + (phone ? ` · mobile from CV: ${phone}` : "");
       } catch (e) {
         msg(e.message);
       }
@@ -235,27 +262,43 @@ async function renderQueue(hronTab) {
       fill.textContent = "Fill form";
       fill.onclick = async () => {
         await save();
-        const { selectors } = await getSettings();
+        const settings = await getSettings();
         const cv = await getCv(c.id);
         try {
+          await chrome.scripting.executeScript({ target: { tabId: hronTab.id }, world: "MAIN", files: ["fill.js"] });
           const [{ result }] = await chrome.scripting.executeScript({
             target: { tabId: hronTab.id },
             world: "MAIN",
-            func: fillHrOnForm,
-            args: [c, cv, selectors],
+            func: (cand, file, s) => fillHrOnForm(cand, file, s),
+            args: [c, cv, settings],
           });
+          if (result.error) return msg(result.error);
           msg(
             result.filled.length
               ? `Filled: ${result.filled.join(", ")}.` +
                   (result.missing.length ? ` Not found: ${result.missing.join(", ")}.` : "") +
                   " Save in HR-ON, then remove the candidate from the queue."
-              : "No fields found. Are you on the 'Create candidate' page?"
+              : "No fields found in the Create CV form."
           );
         } catch (e) {
           msg("Could not fill the form: " + e.message);
         }
       };
       buttons.appendChild(fill);
+    }
+    if (c.cvName) {
+      // For dragging into HR-ON by hand if the form has no CV upload.
+      const dl = document.createElement("button");
+      dl.className = "small secondary";
+      dl.textContent = "Download CV";
+      dl.onclick = async () => {
+        const cv = await getCv(c.id);
+        if (!cv) return msg("CV not found.");
+        const url = URL.createObjectURL(new Blob([base64ToBytes(cv.data)], { type: cv.type }));
+        Object.assign(document.createElement("a"), { href: url, download: cv.name }).click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      };
+      buttons.appendChild(dl);
     }
     const del = document.createElement("button");
     del.className = "small secondary";
@@ -290,13 +333,18 @@ async function renderQueue(hronTab) {
   } else if (/^https:\/\/recruit\.hr-on\.com\//.test(url)) {
     $("hron").classList.remove("hidden");
     try {
-      const { selectors } = await getSettings();
-      const [{ result: jobs }] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: scanHrOnJobs,
-        args: [selectors],
-      });
-      if (jobs.length) await chrome.storage.local.set({ knownJobs: jobs });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fill.js"] });
+      const [{ result: info }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => scanHrOnPage() });
+      const known = new Set(await getKnownJobs());
+      info.jobs.forEach((j) => known.add(j));
+      if (info.currentJob) {
+        known.add(info.currentJob);
+        const jobUrls = await getJobUrls();
+        jobUrls[info.currentJob] = info.url;
+        await chrome.storage.local.set({ jobUrls });
+        $("currentJob").textContent = `Current job: ${info.currentJob}`;
+      }
+      await chrome.storage.local.set({ knownJobs: [...known] });
     } catch {
       /* page not scriptable yet; ignore */
     }

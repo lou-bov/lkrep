@@ -16,28 +16,43 @@ It runs in your own browser with your own logins, so no API keys or passwords ar
 After updating the files, click **Reload** on the extension's card.
 
 ## Usage
-1. Open a candidate profile in LinkedIn Recruiter. Open the contact info if you want email and phone included.
+1. Open a candidate profile in LinkedIn Recruiter. Open the contact info if you want the phone number included.
 2. Click the extension. The fields are filled from the profile; correct them if needed.
-3. **Job**: type or pick the HR-ON job. The list is learned automatically the first time you open
-   the extension on an HR-ON page that has a job dropdown.
+3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on
+   HR-ON's *Job posting overview* or on a job's applicant list.
 4. **Tags**: comma-separated. Defaults come from Settings.
-5. **CV**: click **Fetch: …** to download a CV/attachment linked on the profile, or choose a file
-   (e.g. a CV the candidate sent you, or LinkedIn's "More → Save to PDF").
+5. **CV**: click **Fetch: …** to download a CV linked on the profile, or choose a file (PDF or Word).
+   If the CV has a phone number and Mobile is empty, it is filled in from the CV.
 6. Click **Add and open HR-ON**, or **Add to queue** to collect several candidates.
-7. Log in to HR-ON and open the page for creating a candidate.
-8. Click the extension and click **Fill form** next to the candidate. Filled fields are outlined in green.
+7. In HR-ON, open the job's applicant list (Job posting overview → click the number under
+   *Active applications* / *Total applications*). Once you've done this for a job, the extension
+   opens that job's applicant list directly next time.
+8. Click the extension and click **Fill form** next to the candidate. It clicks **Create CV** and fills:
+
+   | HR-ON field | Value |
+   |---|---|
+   | Name | First and last name |
+   | Address | LinkedIn profile URL |
+   | City / Country | From the LinkedIn location |
+   | E-mail | The fixed e-mail from Settings (default `xyz@f5.dk`) |
+   | Mobile | From LinkedIn contact info, or from the CV |
+   | Tags, CV file | If the form has these fields |
+
+   Filled fields are outlined in green. The picture upload is never used.
 9. Check the data, click **Save** in HR-ON, then **Remove** the candidate from the queue.
 
-The extension never saves in HR-ON itself; you always approve each candidate.
+The extension never saves in HR-ON itself, and it stops if the applicant list is for a different
+job than the candidate's.
 
-If the file picker closes the popup, use **Open queue in a tab** and attach the CV there.
+If the Create CV form has no CV upload, use **Download CV** in the queue and add the file to the
+candidate in HR-ON after saving. If the file picker closes the popup, use **Open queue in a tab**.
 
 ## If a field isn't filled
-Fields are found by their labels in Danish and English (e.g. "Fornavn"/"First name", "Stilling"/"Job",
-"Tags", "CV"). If one isn't found, open **Settings** and give a CSS selector for it:
+Fields are found by their labels in English and Danish. If one isn't found, open **Settings** and give
+a CSS selector for it (right-click the field → Inspect):
 
 ```json
-{ "firstName": "input[name='firstname']", "job": "select[name='job_id']", "cv": "input[name='cv']" }
+{ "mobile": "input[name='mobile']", "tags": "input[name='tags']", "cv": "input[name='cv']" }
 ```
 
 ## Limitations
@@ -45,4 +60,4 @@ Fields are found by their labels in Danish and English (e.g. "Fornavn"/"First na
 - It only reads the profile you have open, on purpose. Bulk scraping LinkedIn breaks LinkedIn's terms of use.
 - A CV can only be fetched when the profile links to a file (e.g. one the candidate sent or applied with).
   Otherwise download it and choose the file.
-- If HR-ON creates the candidate first and adds job/tags/CV on a later page, run **Fill form** again on that page.
+- pdf.js (Apache-2.0) is bundled in `lib/pdfjs` to read phone numbers from PDF CVs.
