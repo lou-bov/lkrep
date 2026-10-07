@@ -20,7 +20,7 @@ After updating the files, click **Reload** on the extension's card.
 2. Click the extension. The fields are filled from the profile; correct them if needed.
 3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on
    HR-ON's *Job posting overview* or on a job's applicant list.
-4. **Tags**: comma-separated. Defaults come from Settings.
+4. **Tags**: comma-separated. Defaults come from Settings (`Linkedin`).
 5. **CV**: click **Fetch: …** to download a CV linked on the profile, or choose a file (PDF or Word).
    If the CV has a phone number and Mobile is empty, it is filled in from the CV.
 6. Click **Add and open HR-ON**, or **Add to queue** to collect several candidates.
@@ -39,8 +39,11 @@ After updating the files, click **Reload** on the extension's card.
    | Attach CV | The CV file |
 
    Filled fields are outlined in green. Picture, Language, Postal code and Attach application are left as they are.
-   The Create CV form has no tag field, so add tags to the candidate after saving.
-9. Check the data, click **Save** in HR-ON, then **Remove** the candidate from the queue.
+9. Check the data and click **Save** in HR-ON.
+10. Open the saved candidate in HR-ON, click the extension and click **Add tags**. It types each tag
+    into the candidate's Tags field and clicks **Add**, skipping tags the candidate already has. It checks
+    that the open candidate has the right name first.
+11. Click **Remove** to take the candidate out of the queue.
 
 The extension never saves in HR-ON itself, and it stops if the applicant list is for a different
 job than the candidate's.

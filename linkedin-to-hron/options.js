@@ -1,9 +1,9 @@
 const DEFAULT_HRON_URL = "https://recruit.hr-on.com/managerlogin.php";
-const EXAMPLE = { mobile: "input[name='mobile']", tags: "input[name='tags']", cv: "input[name='cv']" };
+const EXAMPLE = { mobile: "input[name='mobile']", tagInput: "input[name='tag']", cv: "input[name='cv']" };
 const $ = (id) => document.getElementById(id);
 
 chrome.storage.sync
-  .get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "LinkedIn", fixedEmail: "xyz@f5.dk", selectors: {} })
+  .get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "Linkedin", fixedEmail: "xyz@f5.dk", selectors: {} })
   .then(({ hronUrl, defaultTags, fixedEmail, selectors }) => {
     $("hronUrl").value = hronUrl;
     $("fixedEmail").value = fixedEmail;

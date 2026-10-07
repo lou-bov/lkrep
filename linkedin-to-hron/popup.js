@@ -9,7 +9,7 @@ const setQueue = (queue) => chrome.storage.local.set({ queue });
 const getCv = async (id) => (await chrome.storage.local.get(`cv:${id}`))[`cv:${id}`] || null;
 const setCv = (id, cv) => chrome.storage.local.set({ [`cv:${id}`]: cv });
 const getSettings = () =>
-  chrome.storage.sync.get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "LinkedIn", fixedEmail: "xyz@f5.dk", selectors: {} });
+  chrome.storage.sync.get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "Linkedin", fixedEmail: "xyz@f5.dk", selectors: {} });
 const getKnownJobs = async () => (await chrome.storage.local.get({ knownJobs: [] })).knownJobs;
 const getJobUrls = async () => (await chrome.storage.local.get({ jobUrls: {} })).jobUrls;
 
@@ -212,7 +212,7 @@ async function renderQueue(hronTab) {
     name.textContent = `${c.firstName} ${c.lastName}`.trim() + (c.company ? ` (${c.company})` : "");
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `CV: ${c.cvName || "none"} · Mobile: ${c.phone || "none"}`;
+    meta.textContent = `CV: ${c.cvName || "none"} · Mobile: ${c.phone || "none"}` + (c.tagged ? " · Tags added ✓" : "");
 
     // Job and tags can be adjusted here, e.g. once the HR-ON job list is known.
     const job = document.createElement("input");
@@ -285,6 +285,40 @@ async function renderQueue(hronTab) {
         }
       };
       buttons.appendChild(fill);
+
+      // Step 2, after saving: open the candidate in HR-ON and add the tags there.
+      const tagBtn = document.createElement("button");
+      tagBtn.className = "small";
+      tagBtn.textContent = "Add tags";
+      tagBtn.onclick = async () => {
+        await save();
+        const list = (c.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+        if (!list.length) return msg("No tags to add.");
+        try {
+          await chrome.scripting.executeScript({ target: { tabId: hronTab.id }, world: "MAIN", files: ["fill.js"] });
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: hronTab.id },
+            world: "MAIN",
+            func: (t, n, s) => addHrOnTags(t, n, s),
+            args: [list, `${c.firstName} ${c.lastName}`.trim(), await getSettings()],
+          });
+          const parts = [];
+          if (result.added?.length) parts.push(`Added: ${result.added.join(", ")}.`);
+          if (result.skipped?.length) parts.push(`Already there: ${result.skipped.join(", ")}.`);
+          if (result.error) parts.push(result.error);
+          msg(parts.join(" "));
+          if (!result.error) {
+            const q = await getQueue();
+            const it = q.find((x) => x.id === c.id);
+            if (it) it.tagged = c.tagged = true;
+            await setQueue(q);
+            meta.textContent += " · Tags added ✓";
+          }
+        } catch (e) {
+          msg("Could not add tags: " + e.message);
+        }
+      };
+      buttons.appendChild(tagBtn);
     }
     if (c.cvName) {
       // For dragging into HR-ON by hand if the form has no CV upload.

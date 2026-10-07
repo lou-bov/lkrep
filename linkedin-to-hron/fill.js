@@ -187,36 +187,6 @@ async function fillHrOnForm(candidate, cv, settings) {
     } else missing.push("country");
   }
 
-  // --- Tags ---
-  const tags = (candidate.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
-  if (tags.length) {
-    const el = find("tags", (l) => /^(tags?|mærker|nøgleord|keywords?|labels?)$/.test(l), ["INPUT", "SELECT"]);
-    if (!el) missing.push("tags (the Create CV form has no tag field; add them after saving)");
-    else {
-      used.add(el);
-      if (el.tagName === "SELECT") {
-        for (const tag of tags) {
-          let opt = [...el.options].find((o) => clean(o.textContent).toLowerCase() === tag.toLowerCase());
-          if (!opt) el.add((opt = new Option(tag, tag, true, true)));
-          opt.selected = true;
-        }
-        fire(el, "change");
-        if ($q) $q(el).trigger("change");
-        mark(el);
-      } else {
-        const enter = () =>
-          ["keydown", "keypress", "keyup"].forEach((t) =>
-            el.dispatchEvent(new KeyboardEvent(t, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }))
-          );
-        setValue(el, tags[0]);
-        enter();
-        if (el.value === tags[0]) setValue(el, tags.join(", "));
-        else for (const t of tags.slice(1)) (setValue(el, t), enter());
-      }
-      filled.push("tags");
-    }
-  }
-
   // --- CV file: into "Attach CV", never "Picture" or "Attach application" ---
   if (cv && cv.data) {
     const CV = /\b(attach |vedhæft )?cv\b|resum|curriculum/i;
@@ -279,4 +249,71 @@ async function fillHrOnForm(candidate, cv, settings) {
   setTimeout(() => banner.remove(), 15000);
 
   return { filled, missing, job: page.currentJob };
+}
+
+// Adds tags on an open HR-ON candidate (the panel with "Tags", an input and an
+// "Add" button, shown after the candidate is saved). Skips tags already there.
+async function addHrOnTags(tags, candidateName, settings) {
+  const selectors = (settings && settings.selectors) || {};
+  const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const isVisible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+
+  // The "Tags" heading, its input, and its "Add" button.
+  let input = selectors.tagInput && document.querySelector(selectors.tagInput);
+  let box = input && input.parentElement;
+  if (!input) {
+    const heading = [...document.querySelectorAll("label, div, span, p, h1, h2, h3, h4, h5, h6")].find(
+      (el) => isVisible(el) && el.children.length === 0 && /^(tags?|mærker)$/i.test(clean(el.textContent))
+    );
+    for (let a = heading && heading.parentElement, i = 0; a && i < 4 && !input; a = a.parentElement, i++) {
+      input = [...a.querySelectorAll("input:not([type=hidden]):not([type=file])")].find(isVisible);
+      box = a;
+    }
+  }
+  if (!input) return { error: "Open the candidate in HR-ON first (the panel with Tags and an Add button)." };
+  let addBtn = null;
+  for (let a = input.parentElement, i = 0; a && i < 4 && !addBtn; a = a.parentElement, i++) {
+    addBtn = [...a.querySelectorAll("button, [role=button], input[type=button], input[type=submit]")].find(
+      (b) => /^(add|tilføj)$/i.test(clean(b.textContent || b.value))
+    );
+    if (addBtn && !box.contains(addBtn)) box = a;
+  }
+  if (!addBtn) return { error: "Found the Tags field but no Add button next to it." };
+
+  // Make sure the open candidate is the right person.
+  if (candidateName) {
+    const panel =
+      input.closest("[role=dialog], .modal, [class*='modal'], [class*='Modal'], [class*='drawer'], [class*='Drawer'], [class*='dialog']") ||
+      document.body;
+    if (!clean(panel.innerText).toLowerCase().includes(candidateName.toLowerCase())) {
+      return { error: `The open candidate is not ${candidateName}. Open ${candidateName} in HR-ON and try again.` };
+    }
+  }
+
+  const has = (tag) => {
+    const t = tag.toLowerCase();
+    // A chip's text is the tag plus its "×" remove button.
+    return [...box.querySelectorAll("*")].some(
+      (el) => el !== input && clean(el.textContent).replace(/\s*[×✕✖]\s*$/, "").toLowerCase() === t
+    );
+  };
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  const added = [];
+  const skipped = [];
+  for (const tag of tags) {
+    if (has(tag)) {
+      skipped.push(tag);
+      continue;
+    }
+    input.focus();
+    setter.call(input, tag);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    addBtn.click();
+    for (let i = 0; i < 30 && !has(tag); i++) await sleep(100);
+    if (has(tag)) added.push(tag);
+    else return { added, skipped, error: `HR-ON didn't show the tag "${tag}" after clicking Add.` };
+  }
+  return { added, skipped };
 }
