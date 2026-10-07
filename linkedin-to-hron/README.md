@@ -18,6 +18,8 @@ After updating the files, click **Reload** on the extension's card.
 ## Usage
 1. Open a candidate profile in LinkedIn Recruiter. Open the contact info if you want the phone number included.
 2. Click the extension. The fields are filled from the profile; correct them if needed.
+   At the top it shows whether the person is **already in HR-ON**: on which job postings, with what
+   status and date, and with which tags. (You need to be logged in to HR-ON.)
 3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on
    HR-ON's *Job posting overview* or on a job's applicant list.
 4. **Tags**: comma-separated. Defaults come from Settings (`Linkedin`).
@@ -40,9 +42,9 @@ After updating the files, click **Reload** on the extension's card.
 
    Filled fields are outlined in green. Picture, Language, Postal code and Attach application are left as they are.
 9. Check the data and click **Save** in HR-ON.
-10. Open the saved candidate in HR-ON, click the extension and click **Add tags**. It types each tag
-    into the candidate's Tags field and clicks **Add**, skipping tags the candidate already has. It checks
-    that the open candidate has the right name first.
+10. Click the extension and click **Add tags**. It finds the saved candidate by name in the job posting
+    and adds the tags they don't have yet (the same as typing them in the candidate's Tags field and
+    clicking **Add**). Reopen the candidate in HR-ON to see them.
 11. Click **Remove** to take the candidate out of the queue.
 
 The extension never saves in HR-ON itself, and it stops if the applicant list is for a different
@@ -58,7 +60,14 @@ a CSS selector for it (right-click the field → Inspect):
 { "mobile": "input[name='mobile']", "tags": "input[name='tags']", "cv": "input[name='cv']" }
 ```
 
+## How the HR-ON check works
+The extension uses the same requests as HR-ON's own pages, with your login: it reads the list of job
+postings, searches each one for the person's last name, keeps people whose first and last name match,
+and reads their tags. Each search is cleared afterwards so your HR-ON lists aren't left filtered.
+
 ## Limitations
+- The HR-ON check searches active and draft job postings, not archived ones. It matches by name only,
+  so people with the same name show up as matches, and a changed name won't be found.
 - LinkedIn changes its HTML often. If name or title are missing, update the selectors in `extract.js`.
 - It only reads the profile you have open, on purpose. Bulk scraping LinkedIn breaks LinkedIn's terms of use.
 - A CV can only be fetched when the profile links to a file (e.g. one the candidate sent or applied with).

@@ -31,43 +31,19 @@ function scanHrOnPage() {
 
 // Fills HR-ON's "Create CV" form (opened from a job's applicant list).
 // Runs in the page's MAIN world so it can notify jQuery widgets HR-ON may use.
+// Returns { notHere: true } when this frame has no Create CV form.
 async function fillHrOnForm(candidate, cv, settings) {
   const selectors = settings.selectors || {};
   const $q = window.jQuery;
   const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const isVisible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   const CONTROLS = "input:not([type=hidden]), select, textarea";
 
-  // --- Right job? ---
-  const page = scanHrOnPage();
-  if (candidate.job && page.currentJob) {
-    const a = candidate.job.toLowerCase();
-    const b = page.currentJob.toLowerCase();
-    if (!a.includes(b) && !b.includes(a)) {
-      return {
-        error: `This page is for "${page.currentJob}", but the candidate is for "${candidate.job}". Open that job's applicant list, or change the job in the queue.`,
-      };
-    }
-  }
-
-  // --- Make sure the Create CV form is open ---
-  const formRoot = () => {
-    const dialogs = [...document.querySelectorAll("[role=dialog], .modal, [class*='modal'], [class*='Modal'], [class*='dialog']")]
-      .filter((d) => isVisible(d) && d.querySelector(CONTROLS));
-    return dialogs.find((d) => /create cv|opret cv/i.test(d.textContent)) || null;
-  };
-  if (!formRoot()) {
-    const btn = [...document.querySelectorAll("button, a, [role=button]")].find((b) =>
-      /^\+?\s*(create cv|opret cv)$/i.test(clean(b.textContent))
-    );
-    if (!btn) return { error: "Open a job's applicant list in HR-ON (the page with the 'Create CV' button) first." };
-    btn.click();
-    for (let i = 0; i < 30 && !formRoot(); i++) await sleep(200);
-    if (!formRoot()) return { error: "Clicked 'Create CV', but the form didn't open. Open it yourself and try again." };
-    await sleep(300);
-  }
-  const root = formRoot();
+  // --- Find the Create CV form in this frame (HR-ON may show it in a frame) ---
+  const dialogs = [...document.querySelectorAll("[role=dialog], .modal, [class*='modal'], [class*='Modal'], [class*='dialog']")]
+    .filter((d) => isVisible(d) && d.querySelector(CONTROLS));
+  const root = dialogs.find((d) => /create cv|opret cv/i.test(d.textContent)) || (window !== window.top ? document.body : null);
+  if (!root) return { notHere: true };
 
   // --- Field lookup by label ---
   const labelOf = (el) => {
@@ -125,6 +101,10 @@ async function fillHrOnForm(candidate, cv, settings) {
     setValue(el, value);
     filled.push(key);
   };
+
+  if (!find("name", (l) => /^(full |fulde )?(name|navn)$/.test(l)) && !find("email", (l, el) => /^e-?mail$/.test(l) || el.type === "email")) {
+    return { notHere: true };
+  }
 
   // --- Values ---
   const fullName = `${candidate.firstName} ${candidate.lastName}`.trim();
@@ -248,72 +228,15 @@ async function fillHrOnForm(candidate, cv, settings) {
   document.body.appendChild(banner);
   setTimeout(() => banner.remove(), 15000);
 
-  return { filled, missing, job: page.currentJob };
+  return { filled, missing };
 }
 
-// Adds tags on an open HR-ON candidate (the panel with "Tags", an input and an
-// "Add" button, shown after the candidate is saved). Skips tags already there.
-async function addHrOnTags(tags, candidateName, settings) {
-  const selectors = (settings && settings.selectors) || {};
-  const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const isVisible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
 
-  // The "Tags" heading, its input, and its "Add" button.
-  let input = selectors.tagInput && document.querySelector(selectors.tagInput);
-  let box = input && input.parentElement;
-  if (!input) {
-    const heading = [...document.querySelectorAll("label, div, span, p, h1, h2, h3, h4, h5, h6")].find(
-      (el) => isVisible(el) && el.children.length === 0 && /^(tags?|mærker)$/i.test(clean(el.textContent))
-    );
-    for (let a = heading && heading.parentElement, i = 0; a && i < 4 && !input; a = a.parentElement, i++) {
-      input = [...a.querySelectorAll("input:not([type=hidden]):not([type=file])")].find(isVisible);
-      box = a;
-    }
-  }
-  if (!input) return { error: "Open the candidate in HR-ON first (the panel with Tags and an Add button)." };
-  let addBtn = null;
-  for (let a = input.parentElement, i = 0; a && i < 4 && !addBtn; a = a.parentElement, i++) {
-    addBtn = [...a.querySelectorAll("button, [role=button], input[type=button], input[type=submit]")].find(
-      (b) => /^(add|tilføj)$/i.test(clean(b.textContent || b.value))
-    );
-    if (addBtn && !box.contains(addBtn)) box = a;
-  }
-  if (!addBtn) return { error: "Found the Tags field but no Add button next to it." };
-
-  // Make sure the open candidate is the right person.
-  if (candidateName) {
-    const panel =
-      input.closest("[role=dialog], .modal, [class*='modal'], [class*='Modal'], [class*='drawer'], [class*='Drawer'], [class*='dialog']") ||
-      document.body;
-    if (!clean(panel.innerText).toLowerCase().includes(candidateName.toLowerCase())) {
-      return { error: `The open candidate is not ${candidateName}. Open ${candidateName} in HR-ON and try again.` };
-    }
-  }
-
-  const has = (tag) => {
-    const t = tag.toLowerCase();
-    // A chip's text is the tag plus its "×" remove button.
-    return [...box.querySelectorAll("*")].some(
-      (el) => el !== input && clean(el.textContent).replace(/\s*[×✕✖]\s*$/, "").toLowerCase() === t
-    );
-  };
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-  const added = [];
-  const skipped = [];
-  for (const tag of tags) {
-    if (has(tag)) {
-      skipped.push(tag);
-      continue;
-    }
-    input.focus();
-    setter.call(input, tag);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    addBtn.click();
-    for (let i = 0; i < 30 && !has(tag); i++) await sleep(100);
-    if (has(tag)) added.push(tag);
-    else return { added, skipped, error: `HR-ON didn't show the tag "${tag}" after clicking Add.` };
-  }
-  return { added, skipped };
+// Clicks HR-ON's "Create CV" button on a job's applicant list. Returns false if there is none.
+function clickCreateCv() {
+  const btn = [...document.querySelectorAll("button, a, [role=button]")].find((b) =>
+    /^\+?\s*(create cv|opret cv)$/i.test((b.textContent || "").replace(/\s+/g, " ").trim())
+  );
+  if (btn) btn.click();
+  return !!btn;
 }

@@ -23,6 +23,11 @@
   .item .name { font-weight: 600; }
   .item .meta { color: #555; font-size: 12px; }
   .hidden { display: none; }
+  .check { margin-bottom: 8px; padding: 8px; border-radius: 6px; background: #f2f2f7; font-size: 12px; }
+  .check:empty { display: none; }
+  .check.found { background: #fff4e5; color: #663c00; }
+  .check.none { background: #e8f5e9; color: #1b5e20; }
+  .check .match { margin-top: 4px; }
   a { color: #0a66c2; }
 </style>
 </head>
@@ -30,6 +35,7 @@
   <h1>LinkedIn → HR-ON</h1>
 
   <section id="linkedin" class="hidden">
+    <div id="hronCheck" class="check"></div>
     <div class="row">
       <div><label for="firstName">First name</label><input id="firstName"></div>
       <div><label for="lastName">Last name</label><input id="lastName"></div>
@@ -58,7 +64,7 @@
 
   <section id="hron" class="hidden">
     <p>1. On the job's applicant list, click <b>Fill form</b>, check the form and click <b>Save</b> in HR-ON.<br>
-    2. Open the saved candidate in HR-ON and click <b>Add tags</b>.</p>
+    2. Click <b>Add tags</b>.</p>
     <div class="cv" id="currentJob"></div>
   </section>
 
@@ -79,6 +85,7 @@
 
   <script src="extract.js"></script>
   <script src="cvtext.js"></script>
+  <script src="hron.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
