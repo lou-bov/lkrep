@@ -36,16 +36,16 @@ After updating the files, click **Reload** on the extension's card.
    | City / Country | From the LinkedIn location |
    | E-mail | The fixed e-mail from Settings (default `xyz@f5.dk`) |
    | Mobile | From LinkedIn contact info, or from the CV |
-   | Tags, CV file | If the form has these fields |
+   | Attach CV | The CV file |
 
-   Filled fields are outlined in green. The picture upload is never used.
+   Filled fields are outlined in green. Picture, Language, Postal code and Attach application are left as they are.
+   The Create CV form has no tag field, so add tags to the candidate after saving.
 9. Check the data, click **Save** in HR-ON, then **Remove** the candidate from the queue.
 
 The extension never saves in HR-ON itself, and it stops if the applicant list is for a different
 job than the candidate's.
 
-If the Create CV form has no CV upload, use **Download CV** in the queue and add the file to the
-candidate in HR-ON after saving. If the file picker closes the popup, use **Open queue in a tab**.
+If the CV isn't attached, use **Download CV** in the queue and upload it under **Attach CV** yourself. If the file picker closes the popup, use **Open queue in a tab**.
 
 ## If a field isn't filled
 Fields are found by their labels in English and Danish. If one isn't found, open **Settings** and give

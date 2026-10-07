@@ -191,7 +191,7 @@ async function fillHrOnForm(candidate, cv, settings) {
   const tags = (candidate.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
   if (tags.length) {
     const el = find("tags", (l) => /^(tags?|mærker|nøgleord|keywords?|labels?)$/.test(l), ["INPUT", "SELECT"]);
-    if (!el) missing.push("tags");
+    if (!el) missing.push("tags (the Create CV form has no tag field; add them after saving)");
     else {
       used.add(el);
       if (el.tagName === "SELECT") {
@@ -217,15 +217,42 @@ async function fillHrOnForm(candidate, cv, settings) {
     }
   }
 
-  // --- CV file (never into the Picture upload) ---
+  // --- CV file: into "Attach CV", never "Picture" or "Attach application" ---
   if (cv && cv.data) {
-    const IMAGE = /picture|billede|foto|photo|image|avatar/i;
-    const isImageInput = (i) =>
-      IMAGE.test(labelOf(i)) || (/jpe?g|png|gif|image/i.test(i.accept || "") && !/pdf|doc/i.test(i.accept || ""));
-    const custom = selectors.cv && document.querySelector(selectors.cv);
-    const inputs = [...root.querySelectorAll("input[type=file]")].filter((i) => !i.disabled && !isImageInput(i));
-    const input =
-      custom || inputs.find((i) => /\bcv\b|resum|curriculum|attachment|bilag|document|dokument|fil/i.test(labelOf(i))) || inputs[0];
+    const CV = /\b(attach |vedhæft )?cv\b|resum|curriculum/i;
+    const OTHER = /picture|billede|foto|photo|image|avatar|application|ansøgning/i;
+    // Text of the largest wrapper around `el` that contains no other upload.
+    const groupText = (el, sel) => {
+      let text = "";
+      for (let a = el.parentElement, i = 0; a && a !== root.parentElement && i < 6; a = a.parentElement, i++) {
+        if (a.querySelectorAll(sel).length > 1) break;
+        text = clean(a.innerText || a.textContent);
+      }
+      return text;
+    };
+    const isCvGroup = (t) => CV.test(t.split(/upload|accepted/i)[0]) && !OTHER.test(t.split(/upload|accepted/i)[0]);
+
+    let input = selectors.cv && document.querySelector(selectors.cv);
+    if (!input) {
+      input = [...root.querySelectorAll("input[type=file]")].find((i) => !i.disabled && isCvGroup(groupText(i, "input[type=file]")));
+    }
+    if (!input) {
+      // Upload widgets (e.g. plupload) often put the real file field elsewhere,
+      // positioned over the "Upload" button. Find the CV button and the field over it.
+      const buttons = [...root.querySelectorAll("button, a, label, [role=button], div, span")].filter(
+        (b) => /^(upload|vælg fil|choose file|browse)$/i.test(clean(b.textContent)) && !b.querySelector("button")
+      );
+      const btn = buttons.find((b) => isCvGroup(groupText(b, "button, a, label, [role=button]")));
+      if (btn) {
+        const r = btn.getBoundingClientRect();
+        const overlaps = (el) => {
+          const q = el.getBoundingClientRect();
+          return q.width && q.height && q.left < r.right && q.right > r.left && q.top < r.bottom && q.bottom > r.top;
+        };
+        input = btn.querySelector("input[type=file]") ||
+          [...document.querySelectorAll("input[type=file]")].find((i) => overlaps(i) || (i.parentElement && overlaps(i.parentElement)));
+      }
+    }
     if (input) {
       const bytes = Uint8Array.from(atob(cv.data), (c) => c.charCodeAt(0));
       const dt = new DataTransfer();
@@ -233,9 +260,9 @@ async function fillHrOnForm(candidate, cv, settings) {
       input.files = dt.files;
       fire(input, "input");
       fire(input, "change");
-      mark(input);
-      filled.push(`cv (${cv.name})`);
-    } else missing.push("cv");
+      mark(input.closest("div") || input);
+      filled.push(`CV (${cv.name})`);
+    } else missing.push("CV (use Download CV in the queue and upload it under Attach CV)");
   }
 
   const banner = document.createElement("div");
