@@ -1,0 +1,29 @@
+# Copy to config.toml and adjust.
+
+[rules]
+# Skip anyone with a sales note, completed call, opportunity action or opportunity
+# created/closed within this many days. ("last 1-2 months" - final value TBD.)
+recent_contact_days = 60
+# person_logs types that count as real contact.
+contact_log_types = ["sales"]
+# Skip people who are already active members (any product).
+exclude_active_members = true
+# Matched but not in an active ICP segment: "review" (check if close to ICP) or "skip".
+non_icp_action = "review"
+# Not found in the ERP at all: "review" (possible new lead) or "skip".
+unmatched_action = "review"
+
+[matching]
+# Fall back to first+last name when the LinkedIn URL is not in the ERP.
+name_fallback = true
+# Only accept name matches for persons in these countries ("" = unknown).
+countries = ["DK", "SE", "GL", ""]
+
+# Optional: download the latest results straight from PhantomBuster
+# (needs PHANTOMBUSTER_API_KEY). Otherwise pass --export files.
+# [[phantombuster.agents]]
+# id = "1234567890"          # e.g. LinkedIn Post Likers / Commenters phantom
+# result_name = "result"
+
+# Profiles never to treat as leads (own staff etc.), as "in:<slug>".
+ignore_profiles = []
