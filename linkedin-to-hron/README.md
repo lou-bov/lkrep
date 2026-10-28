@@ -28,7 +28,8 @@ Log in to HR-ON in a tab and keep it open.
      choose a **CV** (or click **Fetch CV** when the profile links one). The mobile number is read from
      the CV. Name, e-mail (`xyz@f5.dk` unless you type another), mobile, title, location and LinkedIn
      link are under **Details**.
-   - **Already in HR-ON**: their applications with an **Open CV** link each, and their current tags.
+   - **Already in HR-ON**: their applications, each with its **status** as a dropdown (change it and
+     it is saved in HR-ON straight away) and an **Open CV** link, and their current tags.
      Click **Edit tags** to add or remove tags, then **Save tags to HR-ON** (or **Cancel**).
 3. Click **Add to HR-ON**. A small window opens and shows the progress: it opens the job's applicant
    list in your HR-ON tab, clicks **Create CV**, fills the form, clicks **Save**, then sets the status

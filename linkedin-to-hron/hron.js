@@ -226,7 +226,7 @@ async function hronCandidateLists(index) {
     ? Object.values(JSON.parse(st[1]))
         .filter((x) => x.active !== "0")
         .sort((x, y) => Number(x.priority) - Number(y.priority))
-        .map((x) => ({ id: String(x.statusid), text: x.text }))
+        .map((x) => ({ id: String(x.statusid), text: x.text, color: x.color ? `#${x.color}` : "#666666" }))
     : [];
   const lists = { at: Date.now(), tags: t ? JSON.parse(t[1]) : [], statuses };
   await chrome.storage.local.set({ hronLists: lists });
@@ -238,6 +238,21 @@ const hronTagList = async (index) => (await hronCandidateLists(index)).tags;
 async function hronSetStatus(appid, statusid) {
   const body = new URLSearchParams({ action: "setstatus", id: appid, statusid }).toString();
   await hronRequest("manager/jobapplies.php", { method: "POST", body });
+}
+
+// Sets the status and checks HR-ON now shows it. Returns the status HR-ON shows,
+// and updates the cached index so the list shows it too.
+async function hronChangeStatus(match, status, lastName) {
+  await hronSetStatus(match.appid, status.id);
+  const term = nameTokens(lastName).at(-1) || "";
+  const row = (await hronApplicants(match.jobId, term)).find((r) => r.appid === match.appid);
+  const shown = row ? row.status : "";
+  const { hronIndex: cache } = await chrome.storage.local.get("hronIndex");
+  if (cache && shown) {
+    for (const r of cache.rows) if (r.appid === match.appid) r.status = shown;
+    await chrome.storage.local.set({ hronIndex: cache });
+  }
+  return shown;
 }
 
 // Re-checks a person's applications live in HR-ON (the index can be up to 30

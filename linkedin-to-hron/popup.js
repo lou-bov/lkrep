@@ -490,15 +490,9 @@ function renderPerson() {
     }
     for (const m of c.matches) {
       const kind = stageOf(m.status);
-      st.append(
-        el(
-          "div",
-          { className: "app" },
-          el("span", { textContent: `${m.job} — ${m.status || "?"}, ${m.date}` }),
-          cvLink(m)
-        )
-      );
-      if (kind) st.lastChild.firstChild.prepend(stageIcon(kind, m), " ");
+      const job = el("div", { className: "app-job", textContent: m.job });
+      if (kind) job.prepend(stageIcon(kind, m), " ");
+      st.append(job, el("div", { className: "app" }, statusPicker(c, m), el("span", { className: "sub", textContent: m.date }), cvLink(m)));
     }
   }
   if (!pending || c.error) {
@@ -600,6 +594,39 @@ function renderPerson() {
     primary.disabled = pending || !c.jobId || !fullName(c);
     primary.textContent = pending ? "Checking HR-ON…" : !c.jobId ? "Choose a job posting first" : "Add to HR-ON";
   }
+}
+
+// The application's HR-ON status as a dropdown; changing it saves it in HR-ON.
+function statusPicker(c, m) {
+  const list = S.statuses.length ? S.statuses : [{ id: "", text: m.status, color: "#666666" }];
+  const current = list.find((x) => x.text.toLowerCase() === (m.status || "").toLowerCase());
+  const sel = el("select", { className: "status-pick", title: "Status in HR-ON — changing it saves it in HR-ON" });
+  if (!current) sel.append(el("option", { value: "", textContent: m.status || "?" }));
+  for (const x of list) sel.append(el("option", { value: x.id, textContent: `● ${x.text}` }));
+  sel.value = current ? current.id : "";
+  sel.style.color = current ? current.color : "";
+  for (const o of sel.options) {
+    const x = list.find((y) => y.id === o.value);
+    if (x) o.style.color = x.color;
+  }
+  sel.disabled = !S.statuses.length || m.saving;
+  sel.onchange = async () => {
+    const status = list.find((x) => x.id === sel.value);
+    if (!status) return;
+    m.saving = true;
+    msg(`Saving status: ${status.text}…`);
+    renderPerson();
+    try {
+      const shown = await hronChangeStatus(m, status, c.lastName);
+      m.status = shown || status.text;
+      msg(shown.toLowerCase() === status.text.toLowerCase() ? `Status saved in HR-ON: ${status.text} ✓` : `HR-ON shows "${shown || "?"}" instead of "${status.text}".`);
+    } catch (e) {
+      msg(`Could not change the status: ${e.message}`);
+    }
+    m.saving = false;
+    renderPerson();
+  };
+  return sel;
 }
 
 async function setCv(c, cv) {
