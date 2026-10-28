@@ -120,15 +120,41 @@ function getIndex(force = false) {
 }
 let refreshBadges = () => {};
 
+// The person's applications in HR-ON, if any (newest first); drives the main button.
+let currentMatches = [];
+const cvUrl = (m) => `${HRON}view-cv/${m.cvid}/${m.appid}/#applications`;
+
+function setMainButton() {
+  $("addAndOpen").textContent = currentMatches.length ? "Open CV in HR-ON (already there)" : "Add and open HR-ON";
+}
+
+// Opens a URL in the HR-ON tab if there is one, else in a new tab.
+// Without a URL, just switches to the HR-ON tab (or opens `fallback`).
+async function openInHrOn(url, fallback = url) {
+  const [existing] = await chrome.tabs.query({ url: `${HRON}*` });
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true, ...(url ? { url } : {}) });
+    await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: url || fallback });
+  }
+}
+
 // Shows whether the person already exists in HR-ON: which job postings, status and tags.
 async function checkHrOn(firstName, lastName, force = false) {
+  currentMatches = [];
+  setMainButton();
   const box = $("hronCheck");
   box.className = "check";
   box.textContent = "Checking HR-ON… (the first check takes a few seconds)";
   if (!firstName && !lastName) return (box.textContent = "");
   try {
     const index = await getIndex(force);
-    const matches = hronMatches(index, firstName, lastName);
+    const matches = hronMatches(index, firstName, lastName).sort((a, b) => Number(b.appid) - Number(a.appid));
+    // Ignore a late answer for someone the user has already moved on from.
+    if (`${$("firstName").value} ${$("lastName").value}`.trim() !== `${firstName} ${lastName}`.trim()) return;
+    currentMatches = matches;
+    setMainButton();
     box.textContent = "";
     if (!matches.length) {
       box.className = "check none";
@@ -141,7 +167,8 @@ async function checkHrOn(firstName, lastName, force = false) {
         const row = el("div", { className: "match" });
         row.append(
           el("a", { href: `${HRON}applications/company/?jobpostid=${m.jobId}`, target: "_blank", textContent: m.job }),
-          ` — ${m.status || "?"}, ${m.date}`
+          ` — ${m.status || "?"}, ${m.date} · `,
+          el("a", { href: cvUrl(m), target: "_blank", textContent: "Open CV" })
         );
         const tagLine = el("div", { className: "meta", textContent: "Tags: …" });
         row.append(tagLine);
@@ -380,17 +407,13 @@ async function initLinkedIn(tab) {
 
   $("add").onclick = addToQueue;
   $("addAndOpen").onclick = async () => {
+    // Already in HR-ON: open their newest application instead of adding them again.
+    if (currentMatches.length) return openInHrOn(cvUrl(currentMatches[0]));
     if (!(await addToQueue())) return;
-    // Go straight to the job's applicant list if we've seen it before.
+    // Go straight to the job's applicant list if we know it.
     const { hronUrl } = await getSettings();
     const jobUrl = (await getJobUrls())[$("job").value.trim()];
-    const [existing] = await chrome.tabs.query({ url: "https://recruit.hr-on.com/*" });
-    if (existing) {
-      await chrome.tabs.update(existing.id, { active: true, ...(jobUrl ? { url: jobUrl } : {}) });
-      await chrome.windows.update(existing.windowId, { focused: true });
-    } else {
-      await chrome.tabs.create({ url: jobUrl || hronUrl });
-    }
+    await openInHrOn(jobUrl, hronUrl);
   };
 }
 

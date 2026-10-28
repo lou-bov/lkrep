@@ -25,7 +25,9 @@ After updating the files, click **Reload** on the extension's card.
    job and tags in the form. The extension scrolls through the page itself to load everyone on it
    (LinkedIn shows up to 50 per page); for the next page of results, go to it and open the extension again.
    At the top it shows whether the person is **already in HR-ON**: on which job postings, with what
-   status and date, and with which tags. (You need to be logged in to HR-ON.)
+   status and date, and with which tags, with an **Open CV** link for each. (You need to be logged in
+   to HR-ON.) If they are already there, the main button becomes **Open CV in HR-ON** and opens their
+   newest application instead of adding them again; **Add to queue** still adds them for another job.
 3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on
    HR-ON's *Job posting overview* or on a job's applicant list.
 4. **Tags**: click HR-ON's existing tags under the field to add or remove them, or type new ones
