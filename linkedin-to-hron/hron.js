@@ -115,10 +115,16 @@ async function hronApplicants(jobId, term = "") {
   return [...rows.values()];
 }
 
-// Tags on a candidate (tags belong to the CV, so they're the same on every application).
-async function hronTags(cvid, appid) {
+// Tags on a candidate with their HR-ON ids (tags belong to the CV, so they're
+// the same on every application). [{ id, name }]
+async function hronTagItems(cvid, appid) {
   const doc = parseHtml(await hronRequest(`view-cv/${cvid}/${appid}/?iframe`));
-  return [...doc.querySelectorAll(".tagsEdit a")].map((a) => cleanText(a.textContent)).filter(Boolean);
+  return [...doc.querySelectorAll(".tagsEdit a")]
+    .map((a) => ({ id: (a.getAttribute("href") || "").replace(/^#/, ""), name: cleanText(a.textContent) }))
+    .filter((t) => t.name);
+}
+async function hronTags(cvid, appid) {
+  return (await hronTagItems(cvid, appid)).map((t) => t.name);
 }
 
 // Adds the tags the candidate doesn't have yet, the way HR-ON's "Add" button does.
@@ -146,6 +152,27 @@ async function hronAddTags(cvid, appid, tags) {
     skipped: tags.filter(has),
     failed: failed.map((t) => (refused[t] ? `${t} (${refused[t]})` : t)),
     tags: after,
+  };
+}
+
+// Makes the candidate's tags exactly `wanted`: adds missing ones and removes the
+// rest, with the same requests as HR-ON's "Add" button and a tag's "×".
+async function hronSetTags(cvid, appid, wanted) {
+  const want = (t) => wanted.some((w) => w.toLowerCase() === t.toLowerCase());
+  const removed = [];
+  const failed = [];
+  for (const t of (await hronTagItems(cvid, appid)).filter((t) => !want(t.name))) {
+    const body = new URLSearchParams({ cvid, tagid: t.id, action: "delete", json: 1 }).toString();
+    await hronRequest("manager/cvtags.php", { method: "POST", body });
+    removed.push(t.name);
+  }
+  const res = await hronAddTags(cvid, appid, wanted);
+  const stillThere = removed.filter((r) => res.tags.some((t) => t.toLowerCase() === r.toLowerCase()));
+  return {
+    added: res.added,
+    removed: removed.filter((r) => !stillThere.includes(r)),
+    failed: [...res.failed, ...stillThere.map((r) => `${r} (not removed)`), ...failed],
+    tags: res.tags,
   };
 }
 

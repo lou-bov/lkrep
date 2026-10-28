@@ -176,6 +176,34 @@ async function checkHrOn(firstName, lastName, force = false) {
         tagsByCv[m.cvid] ??= hronTags(m.cvid, m.appid).catch(() => null);
         tagsByCv[m.cvid].then((t) => (tagLine.textContent = `Tags: ${t == null ? "could not read" : t.join(", ") || "none"}`));
       }
+      // Their current HR-ON tags go into the Tags field, ready to change and save.
+      const newest = matches[0];
+      const save = el("button", { id: "saveTags", className: "small", textContent: "Save tags to HR-ON", disabled: true });
+      box.append(save);
+      tagsByCv[newest.cvid].then((t) => {
+        if (t == null || !currentMatches.includes(newest)) return;
+        hronPerson = { cvid: newest.cvid, appid: newest.appid, tags: t };
+        $("tags").value = t.join(", ");
+        renderChips();
+      });
+      save.onclick = async () => {
+        save.disabled = true;
+        save.textContent = "Saving…";
+        try {
+          const res = await hronSetTags(newest.cvid, newest.appid, fieldTags());
+          const parts = [];
+          if (res.added.length) parts.push(`Added: ${res.added.join(", ")}.`);
+          if (res.removed.length) parts.push(`Removed: ${res.removed.join(", ")}.`);
+          if (res.failed.length) parts.push(`HR-ON did not accept: ${res.failed.join(", ")}.`);
+          msg(parts.join(" ") || "No changes.");
+          hronPerson = { ...hronPerson, tags: res.tags };
+          $("tags").value = res.tags.join(", ");
+          renderChips();
+        } catch (e) {
+          msg("Could not save tags: " + e.message);
+          syncChips();
+        }
+      };
     }
   } catch (e) {
     box.className = "check none";
@@ -196,6 +224,9 @@ function loadPerson(p) {
   $("editing").textContent = `Editing: ${`${p.firstName || ""} ${p.lastName || ""}`.trim() || "—"}`;
   for (const f of ["firstName", "lastName", "phone", "headline", "company", "location", "linkedinUrl"]) $(f).value = p[f] || "";
   $("email").value = fixedEmail;
+  $("tags").value = defaultTags;
+  hronPerson = null;
+  renderChips();
   pendingCv = null;
   $("cvStatus").textContent = "";
   $("cvFile").value = "";
@@ -273,41 +304,67 @@ function showPeople({ people, total }, selected = 0) {
   box.lastChild.append(selectNew, addSel);
 }
 
-// HR-ON's existing tags as chips under the Tags field; click to add or remove one.
-async function showTagPicker() {
-  const box = $("tagPicker");
-  let tags = [];
-  try {
-    tags = await hronTagList(await getIndex());
-  } catch {
-    return; // HR-ON not reachable; the text field still works
-  }
-  const current = () => $("tags").value.split(",").map((t) => t.trim()).filter(Boolean);
-  const chips = tags.map((tag) => {
+// Tags: HR-ON's tag list as chips under the Tags field (click to add/remove).
+// For someone already in HR-ON, the field starts with their current tags.
+let allTags = [];
+let defaultTags = "";
+let hronPerson = null; // { cvid, appid, tags } of the person's newest HR-ON application
+
+const fieldTags = () => $("tags").value.split(",").map((t) => t.trim()).filter(Boolean);
+const hasTag = (list, t) => list.some((x) => x.toLowerCase() === t.toLowerCase());
+
+function renderChips() {
+  const saved = hronPerson ? hronPerson.tags : [];
+  const names = [...allTags];
+  for (const t of [...saved, ...fieldTags()]) if (!hasTag(names, t)) names.push(t);
+  const chips = names.map((tag) => {
     const chip = el("button", { type: "button", className: "chip", textContent: tag });
+    if (hasTag(saved, tag)) chip.title = "On this candidate in HR-ON";
     chip.onclick = () => {
-      const list = current();
+      const list = fieldTags();
       const i = list.findIndex((t) => t.toLowerCase() === tag.toLowerCase());
       if (i >= 0) list.splice(i, 1);
       else list.push(tag);
       $("tags").value = list.join(", ");
-      sync();
+      syncChips();
     };
     return chip;
   });
-  const sync = () => {
-    const list = current().map((t) => t.toLowerCase());
-    chips.forEach((c) => c.classList.toggle("on", list.includes(c.textContent.toLowerCase())));
-  };
-  $("tags").addEventListener("input", sync);
-  box.replaceChildren(...chips);
-  sync();
+  $("tagPicker").replaceChildren(...chips);
+  syncChips();
+}
+
+function syncChips() {
+  const list = fieldTags();
+  const saved = hronPerson ? hronPerson.tags : [];
+  for (const c of $("tagPicker").children) {
+    c.classList.toggle("on", hasTag(list, c.textContent));
+    c.classList.toggle("saved", hasTag(saved, c.textContent));
+  }
+  // Show "Save tags" only when the selection differs from HR-ON.
+  const btn = $("saveTags");
+  if (btn) {
+    const same = saved.length === list.length && saved.every((t) => hasTag(list, t));
+    btn.disabled = same;
+    btn.textContent = same ? "Tags are up to date in HR-ON" : "Save tags to HR-ON";
+  }
+}
+
+async function showTagPicker() {
+  $("tags").addEventListener("input", syncChips);
+  try {
+    allTags = await hronTagList(await getIndex());
+  } catch {
+    /* HR-ON not reachable; the text field still works */
+  }
+  renderChips();
 }
 
 async function initLinkedIn(tab) {
   $("linkedin").classList.remove("hidden");
   const settings = await getSettings();
-  $("tags").value = settings.defaultTags;
+  defaultTags = settings.defaultTags;
+  $("tags").value = defaultTags;
   fixedEmail = settings.fixedEmail || "";
   for (const job of await getKnownJobs()) {
     const o = document.createElement("option");

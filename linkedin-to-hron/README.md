@@ -31,7 +31,9 @@ After updating the files, click **Reload** on the extension's card.
 3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on
    HR-ON's *Job posting overview* or on a job's applicant list.
 4. **Tags**: click HR-ON's existing tags under the field to add or remove them, or type new ones
-   (comma-separated). Defaults come from Settings (`Linkedin`).
+   (comma-separated). New people start with the defaults from Settings (`Linkedin`). For someone
+   already in HR-ON, the field shows their current HR-ON tags (marked ✓); change them and click
+   **Save tags to HR-ON** to add and remove tags there.
 5. **CV**: click **Fetch: …** to download a CV linked on the profile, or choose a file (PDF or Word).
    If the CV has a phone number and Mobile is empty, it is filled in from the CV.
 6. Click **Add and open HR-ON**, or **Add to queue** to collect several candidates.

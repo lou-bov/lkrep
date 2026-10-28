@@ -45,6 +45,10 @@
   .tag-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; max-height: 110px; overflow-y: auto; }
   .chip { width: auto; margin: 0; padding: 2px 8px; border: 1px solid #c7c7cc; border-radius: 10px; background: #fff; color: #1d1d1f; font-weight: 400; font-size: 12px; }
   .chip.on { background: #0a66c2; border-color: #0a66c2; color: #fff; }
+  .chip.saved::before { content: "✓ "; }
+  .chip.saved:not(.on) { text-decoration: line-through; color: #b71c1c; border-color: #b71c1c; }
+  #saveTags { display: block; margin-top: 6px; }
+  #saveTags:disabled { background: #c7c7cc; cursor: default; }
   .row-buttons button { flex: 1; }
   a { color: #0a66c2; }
 </style>

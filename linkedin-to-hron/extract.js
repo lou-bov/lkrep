@@ -6,7 +6,8 @@
 var LI_NAME = "[data-test-row-lockup-full-name], [data-live-test-row-lockup-full-name]";
 
 function liText(el) {
-  return el ? el.textContent.replace(/\s+/g, " ").trim() : "";
+  // Also drops leading separators, e.g. "· Copenhagen, Denmark".
+  return el ? el.textContent.replace(/\s+/g, " ").trim().replace(/^[·•|–-]\s*/, "") : "";
 }
 
 function liFirst(root, selectors) {
