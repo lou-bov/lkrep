@@ -6,7 +6,8 @@
 <style>
   :root {
     --ink: #16181d; --muted: #5b616e; --line: #eceef1; --field: #d4d6db; --soft: #f3f5f8;
-    --new-bg: #e6f4ec; --new-ink: #145c38; --in-bg: #fff1dc; --in-ink: #6b3a00;
+    --new-bg: #dcfce7; --new-ink: #166534; --in-bg: #eef2f6; --in-ink: #364152;
+    --add: #15803d; --process: #f5a50b; --process-ink: #1f1300; --contact: #1570ef;
     --link: #0a58b0; --bad: #b42318; --ok: #1b7f4b;
   }
   * { box-sizing: border-box; }
@@ -28,6 +29,19 @@
   .footer { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
   .primary { width: 100%; height: 44px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; }
   .primary:disabled { background: var(--line); color: var(--muted); cursor: default; }
+  .primary.add { background: var(--add); }
+  .primary.add:disabled { background: var(--new-bg); color: var(--new-ink); border: 1px solid #86efac; }
+
+  /* stage icons: screening = active process, manager review / interview = in contact */
+  .stage { flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+  .stage.process { background: var(--process); color: var(--process-ink); }
+  .stage.contact { background: var(--contact); color: #fff; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 16px 8px; color: var(--muted); font-size: 11px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .stage-line { display: flex; align-items: center; gap: 8px; border-radius: 8px; padding: 6px 8px; font-weight: 600; }
+  .stage-line.process { background: #fef3c7; color: #8a3c06; }
+  .stage-line.contact { background: #dbeafe; color: #1e3a8a; }
+  #saveTags:disabled { background: var(--line) !important; color: var(--muted) !important; border-color: var(--line) !important; }
   .secondary { border: 1px solid var(--field); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--ink); }
   .secondary:disabled { color: var(--muted); cursor: default; }
   .hint { color: var(--muted); font-size: 11px; text-align: center; }
@@ -133,13 +147,17 @@
       <div><b id="listTitle"></b><div id="listSub" class="sub"></div></div>
       <button id="selectNew" class="secondary">Select all new</button>
     </div>
+    <div class="legend">
+      <span><span class="stage process" title="In screening — an active process has started">!</span>In screening — active process</span>
+      <span><span class="stage contact" title="In contact — manager review or interview"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg></span>In contact — manager review or interview</span>
+    </div>
     <div id="people" class="people scroll"></div>
     <div class="footer">
       <div class="bulk-opts">
         <select id="bulkJob" aria-label="Job posting for the people you tick"></select>
         <input id="bulkTags" type="text" aria-label="Tags for the people you tick" placeholder="Tags, comma-separated">
       </div>
-      <button id="addMany" class="primary" disabled>Tick people to add them in one go</button>
+      <button id="addMany" class="primary add" disabled>Tick people to add them in one go</button>
       <div class="hint">Click a person to check or edit them first · people already in HR-ON are skipped</div>
     </div>
   </section>
@@ -166,11 +184,16 @@
       <div class="field">
         <div class="label">Tags <span id="tagHint">Click to add or remove</span></div>
         <div id="chips" class="chips"></div>
-        <div class="new-tag">
+        <span id="noTags" class="sub hidden">No tags yet</span>
+        <div id="newTagRow" class="new-tag">
           <input id="newTag" type="text" placeholder="New tag" aria-label="New tag">
           <button id="addTag" class="secondary">Add</button>
         </div>
-        <button id="saveTags" class="secondary hidden" style="align-self:flex-start"></button>
+        <button id="editTags" class="secondary hidden" style="align-self:flex-start">✎ Edit tags</button>
+        <div id="tagActions" class="hidden" style="display:flex;gap:6px">
+          <button id="saveTags" class="secondary" style="background:var(--ink);color:#fff;border-color:var(--ink)">Save tags to HR-ON</button>
+          <button id="cancelTags" class="secondary">Cancel</button>
+        </div>
       </div>
 
       <div id="cvField" class="field">
@@ -199,7 +222,7 @@
       <div id="msg" class="msg"></div>
     </div>
     <div class="footer">
-      <button id="primary" class="primary">Add to HR-ON</button>
+      <button id="primary" class="primary add">Add to HR-ON</button>
     </div>
   </section>
 

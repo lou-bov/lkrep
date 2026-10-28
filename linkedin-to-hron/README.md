@@ -27,8 +27,8 @@ Log in to HR-ON in a tab and keep it open.
      choose a **CV** (or click **Fetch CV** when the profile links one). The mobile number is read from
      the CV. Name, e-mail (`xyz@f5.dk` unless you type another), mobile, title, location and LinkedIn
      link are under **Details**.
-   - **Already in HR-ON**: their applications with an **Open CV** link each. Their HR-ON tags are
-     marked ✓; change them and click **Save tag changes to HR-ON**.
+   - **Already in HR-ON**: their applications with an **Open CV** link each, and their current tags.
+     Click **Edit tags** to add or remove tags, then **Save tags to HR-ON** (or **Cancel**).
 3. Click **Add to HR-ON**. A small window opens and shows the progress: it opens the job's applicant
    list in your HR-ON tab, clicks **Create CV**, fills the form, clicks **Save**, then adds the tags.
    You can keep working on LinkedIn while it runs; keep the small window open.
@@ -38,6 +38,15 @@ On a list page (pipeline, project, search results) the popup lists everyone on t
 the page itself to load up to 50), each marked **New** or **In HR-ON**. Tick people (or **Select all
 new**), choose the job posting and tags at the bottom, and click **Add N to HR-ON**. People already in
 HR-ON are skipped. For the next page of results, go to it in LinkedIn and open the extension again.
+
+## Icons
+| Icon | Meaning |
+|---|---|
+| **!** (amber) | **In screening**: an active process has started. Check with the recruiter before contacting. |
+| speech bubble (blue) | **In contact**: the person is in Manager Review Needed or an interview stage. |
+
+People in other stages (Received, Sourcing, Rejected, …) show **In HR-ON** without an icon. The list
+has a legend, and hovering an icon shows the job and stage.
 
 ## What goes where in HR-ON
 

@@ -102,6 +102,24 @@ function getIndex(force = false) {
 // The person's HR-ON applications, newest first.
 const matchesIn = (index, p) => hronMatches(index, p.firstName, p.lastName).sort((a, b) => Number(b.appid) - Number(a.appid));
 
+// Stage icons: Screening = an active process has started;
+// Manager Review Needed / Interview N = we are in contact with the person.
+const stageOf = (status) => (/screening/i.test(status) ? "process" : /manager review|interview/i.test(status) ? "contact" : null);
+// The most important stage across the person's applications: in contact, then screening.
+function personStage(matches) {
+  const withStage = (matches || []).map((m) => ({ m, kind: stageOf(m.status) })).filter((x) => x.kind);
+  return withStage.find((x) => x.kind === "contact") || withStage.find((x) => x.kind === "process") || null;
+}
+const BUBBLE_SVG =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>';
+function stageIcon(kind, m) {
+  const icon = el("span", { className: `stage ${kind}` });
+  if (kind === "process") icon.textContent = "!";
+  else icon.innerHTML = BUBBLE_SVG;
+  icon.title = kind === "process" ? `In screening — an active process has started (${m.job})` : `In contact — ${m.status} (${m.job})`;
+  return icon;
+}
+
 // ---------- LinkedIn view ----------
 
 const S = {
@@ -180,6 +198,7 @@ function renderList() {
         el("span", { className: "name", textContent: fullName(p) }),
         el("span", { className: "line", textContent: [p.headline, p.company].filter(Boolean).join(" · ") })
       ),
+      ...(personStage(copy.matches) ? [stageIcon(personStage(copy.matches).kind, personStage(copy.matches).m)] : []),
       badge
     );
     const row = el("div", { className: `row ${S.checked.has(i) ? "checked" : ""}` }, chk, btn);
@@ -280,7 +299,16 @@ function renderPerson() {
   } else {
     st.className = "status in";
     st.append(el("b", { textContent: `Already in HR-ON · ${c.matches.length} application${c.matches.length > 1 ? "s" : ""}` }));
+    const stage = personStage(c.matches);
+    if (stage) {
+      const text =
+        stage.kind === "process"
+          ? `Active process — in Screening (${stage.m.job}). Check with the recruiter before contacting.`
+          : `In contact — ${stage.m.status} (${stage.m.job}). We are talking to this person now.`;
+      st.append(el("div", { className: `stage-line ${stage.kind}` }, stageIcon(stage.kind, stage.m), el("span", { textContent: text })));
+    }
     for (const m of c.matches) {
+      const kind = stageOf(m.status);
       st.append(
         el(
           "div",
@@ -289,13 +317,14 @@ function renderPerson() {
           el("a", { href: cvUrl(m), target: "_blank", textContent: "Open CV" })
         )
       );
+      if (kind) st.lastChild.firstChild.prepend(stageIcon(kind, m), " ");
     }
   }
   if (c.matches != null || c.error) {
     const again = el("a", { href: "#", className: "again", textContent: "Check again" });
     again.onclick = (ev) => {
       ev.preventDefault();
-      for (const p of S.edited.values()) Object.assign(p, { matches: null, savedTags: null, error: "" });
+      for (const p of S.edited.values()) Object.assign(p, { matches: null, savedTags: null, error: "", editingTags: false, tagNote: "" });
       renderPerson();
       getIndex(true);
       markPeople();
@@ -307,16 +336,25 @@ function renderPerson() {
   show("jobField", !inHron);
   fillJobSelect($("job"), c.jobId);
 
-  // Tags
+  // Tags: new people pick from all tags. Someone already in HR-ON shows only their
+  // own tags; "Edit tags" opens the full list with Save / Cancel.
   const saved = c.savedTags || [];
-  $("tagHint").textContent = inHron ? "✓ = on the candidate in HR-ON" : "Click to add or remove";
-  const names = [...S.allTags];
-  for (const t of [...saved, ...c.tags]) if (!hasTag(names, t)) names.push(t);
+  const editing = inHron && !!c.editingTags;
+  const readOnly = inHron && !editing;
+  $("tagHint").textContent = c.tagNote || (!inHron ? "Click to add or remove" : editing ? "Click to add or remove · ✓ = in HR-ON now" : c.savedTags == null ? "Loading…" : "On the candidate in HR-ON");
+  let names = readOnly ? saved : [...S.allTags];
+  if (!readOnly) for (const t of [...saved, ...c.tags]) if (!hasTag(names, t)) names.push(t);
   $("chips").replaceChildren(
     ...names.map((t) => {
       const chip = el("button", { className: "chip", textContent: t });
+      if (readOnly) {
+        chip.classList.add("on");
+        chip.disabled = true;
+        chip.style.cursor = "default";
+        return chip;
+      }
       chip.classList.toggle("on", hasTag(c.tags, t));
-      chip.classList.toggle("saved", hasTag(saved, t));
+      chip.classList.toggle("saved", editing && hasTag(saved, t));
       chip.onclick = () => {
         c.tags = hasTag(c.tags, t) ? c.tags.filter((x) => x.toLowerCase() !== t.toLowerCase()) : [...c.tags, t];
         renderPerson();
@@ -324,11 +362,13 @@ function renderPerson() {
       return chip;
     })
   );
-  const save = $("saveTags");
-  show("saveTags", inHron && c.savedTags != null);
+  show("noTags", readOnly && c.savedTags != null && !saved.length);
+  show("newTagRow", !readOnly);
+  show("editTags", readOnly && c.savedTags != null);
+  show("tagActions", editing);
   const changed = saved.length !== c.tags.length || saved.some((t) => !hasTag(c.tags, t));
-  save.disabled = !changed;
-  save.textContent = changed ? "Save tag changes to HR-ON" : "Tags are up to date in HR-ON";
+  $("saveTags").disabled = !changed;
+  $("saveTags").textContent = changed ? "Save tags to HR-ON" : "No changes";
 
   // CV (new people only)
   show("cvField", !inHron);
@@ -357,6 +397,7 @@ function renderPerson() {
 
   // Main button
   const primary = $("primary");
+  primary.classList.toggle("add", !inHron);
   if (inHron) {
     primary.disabled = false;
     primary.textContent = "Open CV in HR-ON";
@@ -472,6 +513,14 @@ function wireLinkedInControls() {
   };
   $("addTag").onclick = addTag;
   $("newTag").onkeydown = (e) => e.key === "Enter" && addTag();
+  $("editTags").onclick = () => {
+    Object.assign(S.cur, { editingTags: true, tagNote: "" });
+    renderPerson();
+  };
+  $("cancelTags").onclick = () => {
+    Object.assign(S.cur, { editingTags: false, tags: [...(S.cur.savedTags || [])] });
+    renderPerson();
+  };
   $("saveTags").onclick = async () => {
     const c = S.cur;
     $("saveTags").disabled = true;
@@ -480,6 +529,8 @@ function wireLinkedInControls() {
       const res = await hronSetTags(c.matches[0].cvid, c.matches[0].appid, c.tags);
       c.savedTags = res.tags;
       c.tags = [...res.tags];
+      c.editingTags = false;
+      c.tagNote = res.failed.length ? "" : "Saved in HR-ON ✓";
       const parts = [];
       if (res.added.length) parts.push(`Added: ${res.added.join(", ")}.`);
       if (res.removed.length) parts.push(`Removed: ${res.removed.join(", ")}.`);
