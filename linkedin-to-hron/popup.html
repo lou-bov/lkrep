@@ -66,7 +66,20 @@
   .badge { flex: none; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
   .badge.new { background: var(--new-bg); color: var(--new-ink); }
   .badge.in { background: var(--in-bg); color: var(--in-ink); }
-  .bulk-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .bulk-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .everyone { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: #fafbfc; }
+  label.mini { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+  label.mini select, label.mini input { height: 32px; font-size: 13px; }
+  .rcard { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .rcard .top { display: flex; align-items: center; gap: 10px; }
+  .fchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fchip { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
+  .fchip.ok { background: var(--new-bg); color: var(--new-ink); }
+  .fchip.part { background: var(--in-bg); color: var(--in-ink); }
+  .fchip.miss { background: #fef3c7; color: #8a3c06; }
+  .fchip.opt { background: #f3f4f6; color: var(--muted); }
+  .rbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .redit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
   /* person */
   .person { padding: 12px 16px; display: flex; flex-direction: column; gap: 14px; }
@@ -153,13 +166,34 @@
     </div>
     <div id="people" class="people scroll"></div>
     <div class="footer">
-      <div class="bulk-opts">
-        <select id="bulkJob" aria-label="Job posting for the people you tick" style="grid-column: span 2"></select>
-        <select id="bulkStatus" aria-label="Status in HR-ON for the people you tick"></select>
-        <input id="bulkTags" type="text" aria-label="Tags for the people you tick" placeholder="Tags, comma-separated">
-      </div>
       <button id="addMany" class="primary add" disabled>Tick people to add them in one go</button>
       <div class="hint">Click a person to check or edit them first · people already in HR-ON are skipped</div>
+    </div>
+  </section>
+
+  <!-- Check before adding (bulk) -->
+  <section id="reviewScreen" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="person scroll" style="gap:12px">
+      <button id="reviewBack" class="back">← Back to the list</button>
+      <div>
+        <div id="reviewTitle" class="name" style="font-weight:700;font-size:16px"></div>
+        <div id="reviewSummary" class="sub"></div>
+      </div>
+      <div class="everyone">
+        <b style="font-size:12px">For everyone</b>
+        <label class="mini">Job posting<select id="bulkJob"></select></label>
+        <div class="bulk-opts">
+          <label class="mini">Status<select id="bulkStatus"></select></label>
+          <label class="mini">Tags<input id="bulkTags" type="text" placeholder="Tags, comma-separated"></label>
+        </div>
+      </div>
+      <div class="sub" style="font-size:11px">Mobile, public LinkedIn link and CV link are picked up when you open a person's profile in LinkedIn. Anything missing can be typed here or added later in HR-ON. CVs are optional.</div>
+      <div id="reviewCards" style="display:flex;flex-direction:column;gap:10px"></div>
+      <input id="reviewCvFile" type="file" accept=".pdf,.doc,.docx,.rtf,.txt,.odt" class="hidden">
+    </div>
+    <div class="footer">
+      <button id="addReviewed" class="primary add">Add to HR-ON</button>
+      <div class="hint">People with missing details are added anyway; you can complete them later</div>
     </div>
   </section>
 
@@ -203,7 +237,7 @@
       </div>
 
       <div id="cvField" class="field">
-        <div class="label">CV</div>
+        <div class="label">CV <span id="cvHint">Attached when the person is created</span></div>
         <div id="cvLinks" class="cv-links"></div>
         <button id="drop" class="drop">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>

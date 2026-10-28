@@ -258,3 +258,34 @@ async function hronVerify(matches, firstName, lastName) {
   }
   return kept;
 }
+
+// Uploads a file to a candidate's "Internal documents", with the same form as
+// HR-ON's Upload button there. cv = { name, type, data: base64 }.
+async function hronUploadDocument(match, cv) {
+  const url = `${HRON}attachment.upload.php?varname=${match.cvid}&type=idocument`;
+  const send = async (u, cvid, file) => {
+    const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
+    const form = new FormData();
+    form.append("fieldname", "");
+    form.append("varname", cvid);
+    form.append("type", "idocument");
+    form.append("test", new File([bytes], file.name, { type: file.type || "application/pdf" }));
+    const r = await fetch(u, { method: "POST", body: form, credentials: "include" });
+    return { status: r.status };
+  };
+  const [tab] = await chrome.tabs.query({ url: HRON + "*" });
+  let res = null;
+  if (tab) {
+    try {
+      [{ result: res }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: send, args: [url, String(match.cvid), cv] });
+    } catch {
+      res = null;
+    }
+  }
+  if (!res) res = await send(url, String(match.cvid), cv);
+  if (res.status >= 400) throw new Error(`HR-ON answered ${res.status}`);
+  // Confirm: the file name shows up on the candidate page.
+  const page = await hronRequest(`view-cv/${match.cvid}/${match.appid}/?iframe`);
+  const stem = cv.name.replace(/\.[^.]+$/, "");
+  return page.includes(stem) || page.includes(encodeURIComponent(stem));
+}

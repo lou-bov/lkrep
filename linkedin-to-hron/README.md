@@ -38,8 +38,18 @@ Log in to HR-ON in a tab and keep it open.
 **Many people**
 On a list page (pipeline, project, search results) the popup lists everyone on the page (it scrolls
 the page itself to load up to 50), each marked **New** or **In HR-ON**. Tick people (or **Select all
-new**), choose the job posting, status and tags at the bottom, and click **Add N to HR-ON**. People already in
-HR-ON are skipped. For the next page of results, go to it in LinkedIn and open the extension again.
+new**) and click **Check & add N →**. The check screen shows, for each person, what was found and
+what is missing (public LinkedIn link, mobile, CV), with the job posting, status and tags for everyone
+at the top. Per person you can **Open profile in LinkedIn** (the details are picked up and the card
+updates), **Fetch CV**, or **Edit details** (type a mobile or e-mail, drop a CV). Then click **Add N to
+HR-ON**. People already in HR-ON are skipped; people with missing details are added anyway.
+
+Whenever you open a profile in LinkedIn Recruiter, the extension remembers that person's mobile,
+public LinkedIn link and CV links, so they are filled in when you later add the person from a list.
+For the next page of results, go to it in LinkedIn and open the extension again.
+
+**CVs for people already in HR-ON**
+Drop a CV on their screen: it is uploaded to the candidate's **Internal documents** in HR-ON.
 
 ## Icons
 | Icon | Meaning |

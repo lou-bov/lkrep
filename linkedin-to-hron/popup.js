@@ -15,7 +15,8 @@ const show = (id, on = true) => $(id).classList.toggle("hidden", !on);
 const msg = (t) => ($("msg").textContent = t || "");
 const fullName = (p) => `${p.firstName || ""} ${p.lastName || ""}`.trim();
 const initials = (p) => ((p.firstName || " ")[0] + (p.lastName || " ")[0]).trim().toUpperCase() || "?";
-const personKey = (p) => p.linkedinUrl || fullName(p);
+const personKey = (p) => p.recruiterUrl || p.linkedinUrl || fullName(p);
+const isPublicLink = (u) => /linkedin\.com\/in\//.test(u || "");
 const splitTags = (s) => (s || "").split(",").map((t) => t.trim()).filter(Boolean);
 const hasTag = (list, t) => list.some((x) => x.toLowerCase() === t.toLowerCase());
 
@@ -196,12 +197,10 @@ function rememberJob(id) {
 function renderList() {
   show("listScreen");
   show("personScreen", false);
+  show("reviewScreen", false);
   const n = S.people.length;
   $("listTitle").textContent = `${n} people on this page`;
   $("listSub").textContent = S.total && S.total > n ? `${S.total} in total · go to LinkedIn's next page for more` : "";
-  fillJobSelect($("bulkJob"), S.lastJobId);
-  fillStatusSelect($("bulkStatus"), $("bulkStatus").value || S.lastStatusId);
-  if (!$("bulkTags").value) $("bulkTags").value = S.settings.defaultTags;
 
   const box = $("people");
   box.replaceChildren();
@@ -240,9 +239,148 @@ function renderList() {
 
 function updateBulkButton() {
   const n = S.checked.size;
-  const b = $("addMany");
-  b.disabled = !n || !$("bulkJob").value;
-  b.textContent = !n ? "Tick people to add them in one go" : !$("bulkJob").value ? "Choose a job posting first" : `Add ${n} to HR-ON`;
+  $("addMany").disabled = !n;
+  $("addMany").textContent = n ? `Check & add ${n} →` : "Tick people to add them in one go";
+}
+
+// ----- check before adding (bulk) -----
+
+// Details from profiles opened in LinkedIn (saved by extract.js): mobile,
+// public LinkedIn link and CV links, matched by Recruiter profile id and name.
+async function mergeProfiles() {
+  const { liProfiles = {} } = await chrome.storage.local.get("liProfiles");
+  for (const p of S.people) {
+    const id = ((p.recruiterUrl || "").match(/\/profile\/([^/?#]+)/) || [])[1];
+    const rec = id && liProfiles[id];
+    if (!rec || !sameName(fullName(p), `${rec.firstName} ${rec.lastName}`)) continue;
+    for (const target of [p, S.edited.get(personKey(p))]) {
+      if (!target) continue;
+      if (rec.phone && !target.phone) target.phone = rec.phone;
+      if (rec.publicUrl) target.linkedinUrl = rec.publicUrl;
+      if (rec.cvLinks && rec.cvLinks.length) target.cvLinks = rec.cvLinks;
+    }
+  }
+}
+
+function openReview() {
+  show("listScreen", false);
+  show("personScreen", false);
+  show("reviewScreen");
+  renderReview();
+}
+
+function renderReview() {
+  const people = [...S.checked].map((i) => workingCopy(S.people[i]));
+  const inHron = (c) => !!(c.matches && c.matches.length);
+  const adding = people.filter((c) => !inHron(c));
+  fillJobSelect($("bulkJob"), $("bulkJob").value || S.lastJobId);
+  fillStatusSelect($("bulkStatus"), $("bulkStatus").value || S.lastStatusId);
+  if (!$("bulkTags").value) $("bulkTags").value = S.settings.defaultTags;
+
+  const complete = adding.filter((c) => c.phone && isPublicLink(c.linkedinUrl)).length;
+  const noPhone = adding.filter((c) => !c.phone).length;
+  $("reviewTitle").textContent = `Check before adding · ${people.length} people`;
+  $("reviewSummary").textContent =
+    `${complete} with all details · ${noPhone} without mobile · CVs optional` +
+    (people.length > adding.length ? ` · ${people.length - adding.length} already in HR-ON (skipped)` : "");
+
+  const chip = (kind, text) => el("span", { className: `fchip ${kind}`, textContent: text });
+  const btn = (text, onclick) => el("button", { className: "secondary", textContent: text, onclick });
+  $("reviewCards").replaceChildren(
+    ...people.map((c) => {
+      const missing = [];
+      if (!c.phone) missing.push("mobile");
+      if (!isPublicLink(c.linkedinUrl)) missing.push("public link");
+      const state = inHron(c)
+        ? chip("part", "In HR-ON — skipped")
+        : missing.length
+          ? chip("miss", `Missing ${missing.join(", ")}`)
+          : chip("ok", "All details");
+      const card = el(
+        "div",
+        { className: "rcard" },
+        el(
+          "div",
+          { className: "top" },
+          el("span", { className: "avatar", textContent: initials(c) }),
+          el(
+            "span",
+            { className: "who" },
+            el("span", { className: "name", textContent: fullName(c) }),
+            el("span", { className: "line", textContent: [c.headline, c.company, (c.location || "").split(",")[0]].filter(Boolean).join(" · ") })
+          ),
+          state
+        ),
+        el(
+          "div",
+          { className: "fchips" },
+          chip("ok", "✓ Name, title, location"),
+          isPublicLink(c.linkedinUrl) ? chip("ok", "✓ Public LinkedIn link") : chip("part", "~ Recruiter link only"),
+          c.phone ? chip("ok", `✓ Mobile ${c.phone}`) : chip("miss", "! No mobile"),
+          c.cv ? chip("ok", `✓ CV ${c.cv.name}`) : chip("opt", "– No CV (optional)")
+        )
+      );
+      if (inHron(c)) return card;
+
+      const buttons = el("div", { className: "rbtns" });
+      if (!isPublicLink(c.linkedinUrl) && c.recruiterUrl) {
+        buttons.append(
+          btn(c.profileOpening ? "Opening profile… (details appear here)" : "Open profile in LinkedIn ↗", () => {
+            // Opened in a background tab; extract.js saves the details, and the card updates.
+            c.profileOpening = true;
+            chrome.tabs.create({ url: c.recruiterUrl, active: false, windowId: S.tab.windowId });
+            renderReview();
+          })
+        );
+      }
+      if (!c.cv && c.cvLinks && c.cvLinks.length) {
+        buttons.append(
+          btn("Fetch CV", async () => {
+            try {
+              await setCv(c, await fetchCv(c.cvLinks[0].href, S.tab.id, `${fullName(c)}_CV`.replace(/\s+/g, "_")));
+            } catch (e) {
+              msg(`Could not download the CV: ${e.message}`);
+            }
+            renderReview();
+          })
+        );
+      }
+      buttons.append(
+        btn(S.reviewOpen === personKey(c) ? "Done" : "Edit details", () => {
+          S.reviewOpen = S.reviewOpen === personKey(c) ? null : personKey(c);
+          renderReview();
+        })
+      );
+      card.append(buttons);
+
+      if (S.reviewOpen === personKey(c)) {
+        const field = (label, key, type = "text") => {
+          const input = el("input", { type, value: c[key] || "", placeholder: "Not found yet" });
+          input.oninput = () => (c[key] = input.value.trim());
+          input.onchange = () => renderReview();
+          return el("label", { className: "mini" }, label, input);
+        };
+        const cvBtn = el("button", { className: `drop ${c.cv ? "has" : ""}`, textContent: c.cv ? `${c.cv.name} — click to change` : "Drop or choose CV" });
+        cvBtn.style.gridColumn = "span 2";
+        cvBtn.onclick = () => {
+          S.reviewCvTarget = c;
+          $("reviewCvFile").click();
+        };
+        cvBtn.ondragover = (e) => e.preventDefault();
+        cvBtn.ondrop = async (e) => {
+          e.preventDefault();
+          if (e.dataTransfer.files[0]) await setCv(c, await fileToCv(e.dataTransfer.files[0]));
+          renderReview();
+        };
+        card.append(el("div", { className: "redit" }, field("Mobile", "phone"), field("E-mail", "email", "email"), cvBtn));
+      }
+      return card;
+    })
+  );
+
+  const add = $("addReviewed");
+  add.disabled = !adding.length || !$("bulkJob").value;
+  add.textContent = !adding.length ? "Everyone is already in HR-ON" : !$("bulkJob").value ? "Choose a job posting first" : `Add ${adding.length} to HR-ON`;
 }
 
 const onScreen = (id) => !$(id).classList.contains("hidden");
@@ -271,6 +409,7 @@ async function markPeople() {
 function openPerson(i) {
   S.cur = workingCopy(S.people[i]);
   show("listScreen", false);
+  show("reviewScreen", false);
   show("personScreen");
   show("back", S.people.length > 1);
   $("details").open = false;
@@ -414,12 +553,24 @@ function renderPerson() {
   $("saveTags").disabled = !changed;
   $("saveTags").textContent = changed ? "Save tags to HR-ON" : "No changes";
 
-  // CV (new people only)
-  show("cvField", !inHron);
-  $("drop").classList.toggle("has", !!c.cv);
-  $("dropText").textContent = c.cv
-    ? `${c.cv.name}${c.cvPhone ? ` · mobile found: ${c.cvPhone}` : ""} — click to change`
-    : "Drop the CV here, or click to choose a file";
+  // CV: new people get it attached when created; people in HR-ON get it uploaded
+  // to the candidate's Internal documents straight away.
+  show("cvField", !pending);
+  $("cvHint").textContent = inHron ? "Uploaded to the candidate's Internal documents" : "Attached when the person is created";
+  $("drop").classList.toggle("has", !!c.cv && c.cvState !== "failed");
+  const uploadText = {
+    uploading: "uploading to HR-ON…",
+    uploaded: "uploaded to the candidate ✓",
+    sent: "sent to HR-ON — check Internal documents",
+    failed: "upload failed — click to try again",
+  };
+  $("dropText").textContent = !c.cv
+    ? inHron
+      ? "Drop a CV here to add it to the candidate in HR-ON"
+      : "Drop the CV here, or click to choose a file"
+    : inHron
+      ? `${c.cv.name} — ${uploadText[c.cvState] || ""}`
+      : `${c.cv.name}${c.cvPhone ? ` · mobile found: ${c.cvPhone}` : ""} — click to change`;
   $("cvLinks").replaceChildren(
     ...(c.cvLinks || []).map((link) =>
       el("button", {
@@ -452,6 +603,19 @@ function renderPerson() {
 }
 
 async function setCv(c, cv) {
+  if (c.verified && c.matches && c.matches.length) {
+    // Already in HR-ON: upload to the candidate now.
+    Object.assign(c, { cv, cvState: "uploading" });
+    if (S.cur === c) renderPerson();
+    try {
+      c.cvState = (await hronUploadDocument(c.matches[0], cv)) ? "uploaded" : "sent";
+    } catch (e) {
+      c.cvState = "failed";
+      msg(`Could not upload the CV: ${e.message}`);
+    }
+    if (S.cur === c) renderPerson();
+    return;
+  }
   c.cv = cv;
   c.cvPhone = await phoneFromCv(cv);
   if (c.cvPhone && !c.phone) c.phone = c.cvPhone;
@@ -469,10 +633,10 @@ async function initLinkedIn(tab) {
     .then((jobs) => {
       S.jobs = jobs;
       if (onScreen("listScreen")) {
-        fillJobSelect($("bulkJob"), $("bulkJob").value || S.lastJobId);
         updateBulkButton();
       }
       if (S.cur) renderPerson();
+      if (onScreen("reviewScreen")) renderReview();
     })
     .catch(() => {});
   getIndex()
@@ -480,7 +644,7 @@ async function initLinkedIn(tab) {
     .then((lists) => {
       S.allTags = lists.tags;
       S.statuses = lists.statuses;
-      if (onScreen("listScreen")) fillStatusSelect($("bulkStatus"), $("bulkStatus").value || S.lastStatusId);
+      if (onScreen("reviewScreen")) renderReview();
       if (S.cur) renderPerson();
     })
     .catch(() => {});
@@ -499,8 +663,10 @@ async function initLinkedIn(tab) {
   const open = await run(() => extractLinkedInProfile());
   const same = (p, q) => q && ((p.linkedinUrl && p.linkedinUrl === q.linkedinUrl) || sameName(fullName(p), fullName(q)));
 
+  for (const p of page.people) p.recruiterUrl = p.linkedinUrl;
   if (page.people.length > 1) {
     S.people = page.people;
+    await mergeProfiles();
     S.total = page.total;
     // Start on the person last clicked on LinkedIn, or whose profile is open.
     const { liLastClicked: last } = await chrome.storage.local.get("liLastClicked");
@@ -515,6 +681,7 @@ async function initLinkedIn(tab) {
     if (i >= 0) openPerson(i);
     else renderList();
   } else {
+    open.recruiterUrl = /\/profile\//.test(tab.url) ? tab.url.split("?")[0] : open.linkedinUrl;
     S.people = [open];
     openPerson(0);
   }
@@ -533,16 +700,41 @@ function wireLinkedInControls() {
     });
     renderList();
   };
+  $("addMany").onclick = openReview;
+  $("reviewBack").onclick = () => {
+    show("reviewScreen", false);
+    renderList();
+  };
   $("bulkJob").onchange = () => {
     rememberJob($("bulkJob").value);
-    updateBulkButton();
+    renderReview();
   };
   $("bulkStatus").onchange = () => rememberStatus($("bulkStatus").value);
-  $("addMany").onclick = () => {
+  $("reviewCvFile").onchange = async () => {
+    const file = $("reviewCvFile").files[0];
+    $("reviewCvFile").value = "";
+    if (file && S.reviewCvTarget) {
+      try {
+        await setCv(S.reviewCvTarget, await fileToCv(file));
+      } catch (e) {
+        msg(e.message);
+      }
+      renderReview();
+    }
+  };
+  $("addReviewed").onclick = () => {
     const tags = splitTags($("bulkTags").value);
     const statusId = $("bulkStatus").value;
-    startRun([...S.checked].map((i) => ({ ...workingCopy(S.people[i]), jobId: $("bulkJob").value, statusId, tags })));
+    const people = [...S.checked].map((i) => workingCopy(S.people[i])).filter((c) => !(c.matches && c.matches.length));
+    startRun(people.map((c) => ({ ...c, jobId: $("bulkJob").value, statusId, tags })));
   };
+  // Details saved from a profile opened meanwhile (e.g. via "Open profile").
+  chrome.storage.onChanged.addListener(async (changes) => {
+    if (!changes.liProfiles) return;
+    await mergeProfiles();
+    if (onScreen("reviewScreen")) renderReview();
+    if (S.cur && onScreen("personScreen")) renderPerson();
+  });
   for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) {
     $(f).oninput = () => {
       S.cur[f] = $(f).value.trim();

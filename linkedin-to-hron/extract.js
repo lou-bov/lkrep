@@ -196,3 +196,35 @@ if (!window.__liHronClicks) {
     true
   );
 }
+
+// Remembers details from profiles you open (mobile, public LinkedIn link, CV
+// links), so people added in bulk from a list get them too. Recruiter changes
+// pages without reloading, so watch the address for a profile id.
+async function liSaveProfile(id) {
+  const p = extractLinkedInProfile();
+  if (!p.firstName) return;
+  const { liProfiles = {} } = await chrome.storage.local.get("liProfiles");
+  liProfiles[id] = {
+    firstName: p.firstName,
+    lastName: p.lastName,
+    phone: p.phone,
+    publicUrl: /linkedin\.com\/in\//.test(p.linkedinUrl) ? p.linkedinUrl : "",
+    cvLinks: p.cvLinks,
+    at: Date.now(),
+  };
+  // Keep the newest 500.
+  const keys = Object.keys(liProfiles).sort((a, b) => liProfiles[b].at - liProfiles[a].at);
+  for (const k of keys.slice(500)) delete liProfiles[k];
+  await chrome.storage.local.set({ liProfiles });
+}
+if (!window.__liHronProfiles) {
+  window.__liHronProfiles = true;
+  let lastId = "";
+  setInterval(() => {
+    const id = (location.href.match(/\/profile\/([^/?#]+)/) || [])[1];
+    if (!id || id === lastId) return;
+    lastId = id;
+    // Read once the profile has rendered, and again for contact details that load later.
+    for (const delay of [2000, 6000]) setTimeout(() => liSaveProfile(id).catch(() => {}), delay);
+  }, 1000);
+}
