@@ -163,9 +163,12 @@ async function checkHrOn(firstName, lastName, force = false) {
 }
 
 // Puts one person into the form and checks them in HR-ON.
+let fixedEmail = "xyz@f5.dk"; // from Settings; used for everyone unless typed over
+
 function loadPerson(p) {
   $("editing").textContent = `Editing: ${`${p.firstName || ""} ${p.lastName || ""}`.trim() || "—"}`;
-  for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) $(f).value = p[f] || "";
+  for (const f of ["firstName", "lastName", "phone", "headline", "company", "location", "linkedinUrl"]) $(f).value = p[f] || "";
+  $("email").value = fixedEmail;
   pendingCv = null;
   $("cvStatus").textContent = "";
   $("cvFile").value = "";
@@ -173,7 +176,7 @@ function loadPerson(p) {
 }
 
 // List pages (pipeline, project, search): everyone on the page, with their HR-ON status.
-function showPeople({ people, total }) {
+function showPeople({ people, total }, selected = 0) {
   const box = $("people");
   box.classList.remove("hidden");
   const more = total && total > people.length ? ` (${total} in total; go to the next results page for more)` : "";
@@ -203,7 +206,8 @@ function showPeople({ people, total }) {
     list.append(row);
     return { p, row, chk, badge };
   });
-  rows[0]?.row.classList.add("current");
+  rows[selected]?.row.classList.add("current");
+  setTimeout(() => rows[selected]?.row.scrollIntoView({ block: "nearest" }), 0);
   box.append(list);
 
   refreshBadges = async () => {
@@ -232,7 +236,7 @@ function showPeople({ people, total }) {
     for (const p of chosen) {
       const dup = queue.some((q) => (p.linkedinUrl && q.linkedinUrl === p.linkedinUrl) || sameName(`${q.firstName} ${q.lastName}`, `${p.firstName} ${p.lastName}`));
       if (dup) continue;
-      queue.push({ ...p, job: $("job").value.trim(), tags: $("tags").value.trim(), id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, addedAt: Date.now() });
+      queue.push({ ...p, email: fixedEmail, job: $("job").value.trim(), tags: $("tags").value.trim(), id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, addedAt: Date.now() });
       added++;
     }
     await setQueue(queue);
@@ -275,8 +279,9 @@ async function showTagPicker() {
 
 async function initLinkedIn(tab) {
   $("linkedin").classList.remove("hidden");
-  const { defaultTags } = await getSettings();
-  $("tags").value = defaultTags;
+  const settings = await getSettings();
+  $("tags").value = settings.defaultTags;
+  fixedEmail = settings.fixedEmail || "";
   for (const job of await getKnownJobs()) {
     const o = document.createElement("option");
     o.value = job;
@@ -288,25 +293,35 @@ async function initLinkedIn(tab) {
 
   let profile = {};
   try {
+    const run = async (func, args = []) => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }))[0].result;
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["extract.js"] });
-    const onProfile = /\/profile\/|linkedin\.com\/in\//.test(tab.url);
-    let page = { people: [] };
-    const readList = async () => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => extractLinkedInList() }))[0].result;
-    if (!onProfile) page = await readList();
+    let page = await run(() => extractLinkedInList());
     if (page.people.length > 1 && (!page.total || page.total > page.people.length)) {
       // Load everyone on this results page (LinkedIn shows up to 50 per page).
       msg("Loading everyone on this page…");
-      const want = Math.min(page.total || 50, 50);
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: (n) => liLoadAll(n), args: [want] });
-      page = await readList();
+      await run((n) => liLoadAll(n), [Math.min(page.total || 50, 50)]);
+      page = await run(() => extractLinkedInList());
       msg("");
     }
+    // Details from an open profile (mobile, CV links, public profile link), if one is open.
+    const open = await run(() => extractLinkedInProfile());
     if (page.people.length > 1) {
-      showPeople(page);
-      profile = page.people[0];
+      // Start on the person last clicked on the LinkedIn page, or whose profile is open.
+      const { liLastClicked: last } = await chrome.storage.local.get("liLastClicked");
+      const profileId = (tab.url.match(/\/profile\/([^/?#]+)/) || [])[1];
+      const same = (p, q) => q && ((p.linkedinUrl && p.linkedinUrl === q.linkedinUrl) || sameName(`${p.firstName} ${p.lastName}`, `${q.firstName} ${q.lastName}`));
+      let i = last && Date.now() - last.at < 30 * 60 * 1000 ? page.people.findIndex((p) => same(p, last.person)) : -1;
+      if (i < 0 && profileId) i = page.people.findIndex((p) => p.linkedinUrl.includes(profileId));
+      if (i < 0) i = 0;
+      showPeople(page, i);
+      profile = { ...page.people[i] };
+      if (same(profile, open)) {
+        profile.phone = open.phone;
+        profile.cvLinks = open.cvLinks;
+        if (/linkedin\.com\/in\//.test(open.linkedinUrl)) profile.linkedinUrl = open.linkedinUrl;
+      }
     } else {
-      [{ result: profile }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => extractLinkedInProfile() });
-      if (!profile.email) msg("No email found. Open the profile's contact info, or type it in.");
+      profile = open;
     }
   } catch (e) {
     msg("Could not read the page: " + e.message);
@@ -583,6 +598,7 @@ async function renderQueue(hronTab) {
 }
 
 (async () => {
+  $("version").textContent = `v${chrome.runtime.getManifest().version}`;
   if (new URLSearchParams(location.search).get("view") === "queue") {
     // Full-tab view: safe for file pickers, which can close the popup on some systems.
     document.body.classList.add("page");

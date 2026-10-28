@@ -131,7 +131,8 @@ async function fillHrOnForm(candidate, cv, settings) {
   }
   put("address", candidate.linkedinUrl, (l) => /^(address|adresse)$/.test(l) || /linkedin/.test(l));
   put("city", city, (l) => /^(city|by)$/.test(l));
-  put("email", settings.fixedEmail || candidate.email, (l, el) => /^e-?mail$/.test(l) || el.type === "email");
+  // The form's e-mail is the fixed address unless the user typed another one.
+  put("email", candidate.email || settings.fixedEmail, (l, el) => /^e-?mail$/.test(l) || el.type === "email");
   if (candidate.phone) {
     const mobile = find("mobile", (l) => /^(mobile|mobil|mobilnummer|mobile phone|mobiltelefon)$/.test(l));
     const target = mobile || find("phone", (l) => /^(phone|telefon|tlf|telephone)$/.test(l));

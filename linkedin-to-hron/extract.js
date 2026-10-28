@@ -2,7 +2,8 @@
 // files: ["extract.js"]); the popup then calls these functions in the page.
 // LinkedIn changes its markup often, so every field tries several selectors.
 
-const LI_NAME = "[data-test-row-lockup-full-name], [data-live-test-row-lockup-full-name]";
+// `var`, not `const`: this file is injected again each time the popup opens.
+var LI_NAME = "[data-test-row-lockup-full-name], [data-live-test-row-lockup-full-name]";
 
 function liText(el) {
   return el ? el.textContent.replace(/\s+/g, " ").trim() : "";
@@ -103,39 +104,44 @@ function extractLinkedInProfile() {
   };
 }
 
+// One person's card on a list page, from their name element.
+function liPersonFromName(nameEl) {
+  // The card is the largest wrapper that holds only this one person.
+  let card = nameEl;
+  while (card.parentElement && card.parentElement !== document.body && card.parentElement.querySelectorAll(LI_NAME).length === 1) {
+    card = card.parentElement;
+  }
+  const fullName = liText(nameEl);
+  const link =
+    nameEl.closest("a[href]") ||
+    nameEl.querySelector("a[href]") ||
+    card.querySelector("a[href*='/talent/'][href*='profile'], a[data-test-link-to-profile-link], a[href*='linkedin.com/in/']");
+  const headline = liFirst(card, ["[data-test-row-lockup-headline]", "[data-live-test-row-lockup-headline]"]);
+  const lines = (card.innerText || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const job = liCurrentJob(lines, headline);
+  return {
+    ...liSplitName(fullName),
+    headline: job.title || headline,
+    company: job.company,
+    location: liFirst(card, ["[data-test-row-lockup-location]", "[data-live-test-row-lockup-location]"]),
+    email: "",
+    phone: "",
+    linkedinUrl: link ? link.href.split("?")[0] : "",
+    notes: "",
+  };
+}
+
 // Everyone on a Recruiter list page (pipeline, project, search results).
 // Returns { people, total } where total is the "N results" count if shown.
 function extractLinkedInList() {
   const people = [];
   const seen = new Set();
   for (const nameEl of document.querySelectorAll(LI_NAME)) {
-    // The card is the largest wrapper that holds only this one person.
-    let card = nameEl;
-    while (card.parentElement && card.parentElement !== document.body && card.parentElement.querySelectorAll(LI_NAME).length === 1) {
-      card = card.parentElement;
-    }
-    const fullName = liText(nameEl);
-    const link =
-      nameEl.closest("a[href]") ||
-      nameEl.querySelector("a[href]") ||
-      card.querySelector("a[href*='/talent/'][href*='profile'], a[data-test-link-to-profile-link], a[href*='linkedin.com/in/']");
-    const url = link ? link.href.split("?")[0] : "";
-    const key = url || fullName;
-    if (!fullName || seen.has(key)) continue;
+    const p = liPersonFromName(nameEl);
+    const key = p.linkedinUrl || `${p.firstName} ${p.lastName}`;
+    if (!p.firstName || seen.has(key)) continue;
     seen.add(key);
-    const headline = liFirst(card, ["[data-test-row-lockup-headline]", "[data-live-test-row-lockup-headline]"]);
-    const lines = (card.innerText || "").split("\n").map((l) => l.trim()).filter(Boolean);
-    const job = liCurrentJob(lines, headline);
-    people.push({
-      ...liSplitName(fullName),
-      headline: job.title || headline,
-      company: job.company,
-      location: liFirst(card, ["[data-test-row-lockup-location]", "[data-live-test-row-lockup-location]"]),
-      email: "",
-      phone: "",
-      linkedinUrl: url,
-      notes: "",
-    });
+    people.push(p);
   }
   const m = document.body.innerText.match(/(\d[\d.,]*)\s+(results|resultater|kandidater|candidates)\b/i);
   return { people, total: m ? Number(m[1].replace(/[.,]/g, "")) : null };
@@ -167,4 +173,24 @@ async function liLoadAll(want) {
   }
   target.scrollTop = start;
   return count();
+}
+
+// Remembers the last person clicked on the LinkedIn page, so the popup opens on them.
+if (!window.__liHronClicks) {
+  window.__liHronClicks = true;
+  document.addEventListener(
+    "click",
+    (ev) => {
+      for (let n = ev.target; n && n !== document.body; n = n.parentElement) {
+        if (!n.querySelectorAll) continue;
+        const nameEl = n.matches(LI_NAME) ? n : n.querySelectorAll(LI_NAME).length === 1 ? n.querySelector(LI_NAME) : null;
+        if (nameEl) {
+          chrome.storage.local.set({ liLastClicked: { person: liPersonFromName(nameEl), at: Date.now() } });
+          return;
+        }
+        if (n.querySelectorAll(LI_NAME).length > 1) return; // clicked outside any one person
+      }
+    },
+    true
+  );
 }

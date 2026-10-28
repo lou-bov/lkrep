@@ -19,6 +19,7 @@ After updating the files, click **Reload** on the extension's card.
 1. Open a candidate profile in LinkedIn Recruiter. Open the contact info if you want the phone number included.
 2. Click the extension. The fields are filled from the profile; correct them if needed.
    On a **list page** (pipeline, project, search results) the extension lists everyone on the page,
+   and starts on the person you last clicked on the LinkedIn page (or whose profile is open).
    each marked **New** or **In HR-ON: <job>**. Click a name to load that person into the form, or tick
    several (or click **Select all new**) and click **Add selected to queue** to add them all with the
    job and tags in the form. The extension scrolls through the page itself to load everyone on it
@@ -42,7 +43,7 @@ After updating the files, click **Reload** on the extension's card.
    | Name | First and last name |
    | Address | LinkedIn profile URL |
    | City / Country | From the LinkedIn location |
-   | E-mail | The fixed e-mail from Settings (default `xyz@f5.dk`) |
+   | E-mail | `xyz@f5.dk` (Settings), unless you typed another address for this candidate |
    | Mobile | From LinkedIn contact info, or from the CV |
    | Attach CV | The CV file |
 
