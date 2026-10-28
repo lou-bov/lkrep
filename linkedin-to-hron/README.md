@@ -21,8 +21,8 @@ After updating the files, click **Reload** on the extension's card.
    On a **list page** (pipeline, project, search results) the extension lists everyone on the page,
    each marked **New** or **In HR-ON: <job>**. Click a name to load that person into the form, or tick
    several (or click **Select all new**) and click **Add selected to queue** to add them all with the
-   job and tags in the form. LinkedIn only loads the people you've scrolled past, so scroll to the
-   bottom of the page first; for the next page of results, go to it and open the extension again.
+   job and tags in the form. The extension scrolls through the page itself to load everyone on it
+   (LinkedIn shows up to 50 per page); for the next page of results, go to it and open the extension again.
    At the top it shows whether the person is **already in HR-ON**: on which job postings, with what
    status and date, and with which tags. (You need to be logged in to HR-ON.)
 3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on

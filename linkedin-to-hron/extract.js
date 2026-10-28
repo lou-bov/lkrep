@@ -140,3 +140,31 @@ function extractLinkedInList() {
   const m = document.body.innerText.match(/(\d[\d.,]*)\s+(results|resultater|kandidater|candidates)\b/i);
   return { people, total: m ? Number(m[1].replace(/[.,]/g, "")) : null };
 }
+
+// LinkedIn only renders people as you scroll. Scrolls through the list to load
+// everyone on this page (up to `want`), then scrolls back. Returns how many are loaded.
+async function liLoadAll(want) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const count = () => document.querySelectorAll(LI_NAME).length;
+  const names = document.querySelectorAll(LI_NAME);
+  if (!names.length) return 0;
+  // The list may scroll inside its own panel rather than the window.
+  let scroller = names[names.length - 1].parentElement;
+  while (scroller && scroller !== document.body && !(scroller.scrollHeight > scroller.clientHeight + 10 && /(auto|scroll)/.test(getComputedStyle(scroller).overflowY))) {
+    scroller = scroller.parentElement;
+  }
+  const target = scroller && scroller !== document.body ? scroller : document.scrollingElement;
+  const start = target.scrollTop;
+  let last = -1;
+  let still = 0;
+  for (let i = 0; i < 60 && count() < want && still < 4; i++) {
+    const all = document.querySelectorAll(LI_NAME);
+    all[all.length - 1].scrollIntoView({ block: "center" });
+    target.scrollTop += target.clientHeight * 0.8;
+    await sleep(350);
+    still = count() === last ? still + 1 : 0;
+    last = count();
+  }
+  target.scrollTop = start;
+  return count();
+}

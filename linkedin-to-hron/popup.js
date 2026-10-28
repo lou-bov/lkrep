@@ -175,7 +175,7 @@ function loadPerson(p) {
 function showPeople({ people, total }) {
   const box = $("people");
   box.classList.remove("hidden");
-  const more = total && total > people.length ? ` of ${total}. Scroll down the LinkedIn page and reopen this to load the rest` : "";
+  const more = total && total > people.length ? ` (${total} in total; go to the next results page for more)` : "";
   box.append(el("b", { textContent: `${people.length} people on this page${more}.` }));
   box.append(el("div", { className: "meta", textContent: "Click a name to edit and add one person, or tick several and add them all to the queue." }));
   const list = el("div", { className: "people-list" });
@@ -285,7 +285,16 @@ async function initLinkedIn(tab) {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["extract.js"] });
     const onProfile = /\/profile\/|linkedin\.com\/in\//.test(tab.url);
     let page = { people: [] };
-    if (!onProfile) [{ result: page }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => extractLinkedInList() });
+    const readList = async () => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => extractLinkedInList() }))[0].result;
+    if (!onProfile) page = await readList();
+    if (page.people.length > 1 && (!page.total || page.total > page.people.length)) {
+      // Load everyone on this results page (LinkedIn shows up to 50 per page).
+      msg("Loading everyone on this page…");
+      const want = Math.min(page.total || 50, 50);
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: (n) => liLoadAll(n), args: [want] });
+      page = await readList();
+      msg("");
+    }
     if (page.people.length > 1) {
       showPeople(page);
       profile = page.people[0];
