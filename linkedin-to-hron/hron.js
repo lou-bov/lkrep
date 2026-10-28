@@ -191,28 +191,6 @@ async function mapLimit(items, n, fn) {
   return out;
 }
 
-// Finds a person across all job postings by name.
-// Returns { jobsSearched, matches: [{ jobId, job, name, cvid, appid, status, date, tags }] }.
-async function hronFindPerson(firstName, lastName, onlyJobId = null) {
-  const fullName = `${firstName} ${lastName}`.trim();
-  const term = nameTokens(lastName).at(-1) || nameTokens(fullName).at(-1);
-  if (!term) return { jobsSearched: 0, matches: [] };
-  let jobs = await hronJobs();
-  if (onlyJobId) jobs = jobs.filter((j) => j.id === onlyJobId);
-  const perJob = await mapLimit(jobs, 3, async (job) =>
-    (await hronApplicants(job.id, term))
-      .filter((r) => sameName(r.name, fullName))
-      .map((r) => ({ ...r, jobId: job.id, job: job.title }))
-  );
-  const matches = perJob.flat();
-  const tagsByCv = {};
-  for (const m of matches) {
-    if (!(m.cvid in tagsByCv)) tagsByCv[m.cvid] = await hronTags(m.cvid, m.appid).catch(() => null);
-    m.tags = tagsByCv[m.cvid];
-  }
-  return { jobsSearched: jobs.length, matches };
-}
-
 // Every applicant on every job posting, cached for 30 minutes, so many people
 // can be checked at once. [{ name, cvid, appid, status, date, jobId, job }]
 async function hronIndex(force = false) {

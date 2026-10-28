@@ -1,7 +1,8 @@
 # LinkedIn Recruiter → HR-ON
 
-Browser extension for **Microsoft Edge** and **Google Chrome** that creates candidates from
-LinkedIn Recruiter in HR-ON Recruit (`https://recruit.hr-on.com`): contact details, job, tags and CV.
+Browser extension for **Microsoft Edge** and **Google Chrome** that adds people from LinkedIn
+Recruiter to HR-ON Recruit (`https://recruit.hr-on.com`): name, LinkedIn link, location, e-mail,
+mobile, CV, job posting and tags. It also shows whether someone is already in HR-ON.
 It runs in your own browser with your own logins, so no API keys or passwords are needed.
 
 ## Installation
@@ -9,81 +10,65 @@ It runs in your own browser with your own logins, so no API keys or passwords ar
 1. Go to `edge://extensions`.
 2. Turn on **Developer mode** (bottom left).
 3. Click **Load unpacked** and choose the `linkedin-to-hron` folder.
-4. Click the puzzle icon in the toolbar and pin "LinkedIn → HR-ON".
+4. Click the puzzle icon in the toolbar and pin "LinkedIn Recruiter → HR-ON".
 
 **Chrome**: the same steps, starting at `chrome://extensions`.
 
-After updating the files, click **Reload** on the extension's card.
+After updating the files, click **Reload** on the extension's card (or remove it and load it again),
+then reload the LinkedIn tab. The version is shown in the popup's title.
 
 ## Usage
-1. Open a candidate profile in LinkedIn Recruiter. Open the contact info if you want the phone number included.
-2. Click the extension. The fields are filled from the profile; correct them if needed.
-   On a **list page** (pipeline, project, search results) the extension lists everyone on the page,
-   and starts on the person you last clicked on the LinkedIn page (or whose profile is open).
-   each marked **New** or **In HR-ON: <job>**. Click a name to load that person into the form, or tick
-   several (or click **Select all new**) and click **Add selected to queue** to add them all with the
-   job and tags in the form. The extension scrolls through the page itself to load everyone on it
-   (LinkedIn shows up to 50 per page); for the next page of results, go to it and open the extension again.
-   At the top it shows whether the person is **already in HR-ON**: on which job postings, with what
-   status and date, and with which tags, with an **Open CV** link for each. (You need to be logged in
-   to HR-ON.) If they are already there, the main button becomes **Open CV in HR-ON** and opens their
-   newest application instead of adding them again; **Add to queue** still adds them for another job.
-3. **Job**: type or pick the HR-ON job posting. Job titles are learned when you open the extension on
-   HR-ON's *Job posting overview* or on a job's applicant list.
-4. **Tags**: click HR-ON's existing tags under the field to add or remove them, or type new ones
-   (comma-separated). New people start with the defaults from Settings (`Linkedin`). For someone
-   already in HR-ON, the field shows their current HR-ON tags (marked ✓); change them and click
-   **Save tags to HR-ON** to add and remove tags there.
-5. **CV**: click **Fetch: …** to download a CV linked on the profile, or choose a file (PDF or Word).
-   If the CV has a phone number and Mobile is empty, it is filled in from the CV.
-6. Click **Add and open HR-ON**, or **Add to queue** to collect several candidates.
-7. In HR-ON, open the job's applicant list (Job posting overview → click the number under
-   *Active applications* / *Total applications*). Once you've done this for a job, the extension
-   opens that job's applicant list directly next time.
-8. Click the extension and click **Fill form** next to the candidate. It clicks **Create CV** and fills:
+Log in to HR-ON in a tab and keep it open.
 
-   | HR-ON field | Value |
-   |---|---|
-   | Name | First and last name |
-   | Address | LinkedIn profile URL |
-   | City / Country | From the LinkedIn location |
-   | E-mail | `xyz@f5.dk` (Settings), unless you typed another address for this candidate |
-   | Mobile | From LinkedIn contact info, or from the CV |
-   | Attach CV | The CV file |
+**One person**
+1. In LinkedIn Recruiter, click the person (in a list, or open their profile), then click the extension.
+2. The popup shows the person and whether they are in HR-ON:
+   - **New**: choose the **job posting**, pick **tags** (HR-ON's own tags, or type a new one), drop or
+     choose a **CV** (or click **Fetch CV** when the profile links one). The mobile number is read from
+     the CV. Name, e-mail (`xyz@f5.dk` unless you type another), mobile, title, location and LinkedIn
+     link are under **Details**.
+   - **Already in HR-ON**: their applications with an **Open CV** link each. Their HR-ON tags are
+     marked ✓; change them and click **Save tag changes to HR-ON**.
+3. Click **Add to HR-ON**. A small window opens and shows the progress: it opens the job's applicant
+   list in your HR-ON tab, clicks **Create CV**, fills the form, clicks **Save**, then adds the tags.
+   You can keep working on LinkedIn while it runs; keep the small window open.
 
-   Filled fields are outlined in green. Picture, Language, Postal code and Attach application are left as they are.
-9. Check the data and click **Save** in HR-ON.
-10. Click the extension and click **Add tags**. It finds the saved candidate by name in the job posting
-    and adds the tags they don't have yet (the same as typing them in the candidate's Tags field and
-    clicking **Add**). Reopen the candidate in HR-ON to see them.
-11. Click **Remove** to take the candidate out of the queue.
+**Many people**
+On a list page (pipeline, project, search results) the popup lists everyone on the page (it scrolls
+the page itself to load up to 50), each marked **New** or **In HR-ON**. Tick people (or **Select all
+new**), choose the job posting and tags at the bottom, and click **Add N to HR-ON**. People already in
+HR-ON are skipped. For the next page of results, go to it in LinkedIn and open the extension again.
 
-The extension never saves in HR-ON itself, and it stops if the applicant list is for a different
-job than the candidate's.
+## What goes where in HR-ON
 
-If the CV isn't attached, use **Download CV** in the queue and upload it under **Attach CV** yourself. If the file picker closes the popup, use **Open queue in a tab**.
+| HR-ON field (Create CV) | Value |
+|---|---|
+| Name | First and last name |
+| Address | LinkedIn profile link |
+| City / Country | From the LinkedIn location |
+| E-mail | `xyz@f5.dk` (Settings), unless you typed another address |
+| Mobile | From the CV, or LinkedIn contact info |
+| Attach CV | The CV file |
+| Tags (after saving) | The chosen tags |
 
-## If a field isn't filled
-Fields are found by their labels in English and Danish. If one isn't found, open **Settings** and give
-a CSS selector for it (right-click the field → Inspect):
-
-```json
-{ "mobile": "input[name='mobile']", "tags": "input[name='tags']", "cv": "input[name='cv']" }
-```
+Picture, Language, Postal code, Phone and Attach application are left empty.
 
 ## How the HR-ON check works
 The extension uses the same requests as HR-ON's own pages, with your login. It reads the applicant
-list of every job posting once and keeps it for 30 minutes (click **Check again** to reload it), so a
-whole page of people can be checked at once. People match when first and last name match; their tags
-are read from the candidate page. Adding tags uses the same request as HR-ON's own **Add** button.
+list of every job posting once and keeps it for 30 minutes (**Check again** reloads it). People match
+when first and last name match. Tags are read from and saved with the same requests as the Tags field
+on a candidate in HR-ON.
+
+## If a field isn't filled
+Fields are found by their labels in English and Danish. If one isn't found, open **Settings** (the
+gear icon) and give a CSS selector for it (right-click the field in HR-ON → Inspect), e.g.
+`{ "mobile": "input[name='mobile']", "cv": "input[name='cv']" }`.
 
 ## Limitations
-- People added from a list page get their Recruiter profile link (only people with Recruiter access
-  can open it), no e-mail, mobile or CV. Open the person's profile and add them from there to get those.
-- The HR-ON check searches active and draft job postings, not archived ones. It matches by name only,
-  so people with the same name show up as matches, and a changed name won't be found.
-- LinkedIn changes its HTML often. If name or title are missing, update the selectors in `extract.js`.
-- It only reads the profile you have open, on purpose. Bulk scraping LinkedIn breaks LinkedIn's terms of use.
-- A CV can only be fetched when the profile links to a file (e.g. one the candidate sent or applied with).
-  Otherwise download it and choose the file.
+- The HR-ON check covers active and draft job postings, not archived ones, and matches by name only.
+- People added from a list page get their Recruiter profile link (only colleagues with Recruiter
+  access can open it), no mobile and no CV. Open the person's profile first to get those.
+- LinkedIn changes its HTML often. If names or titles are missing, the selectors in `extract.js`
+  need updating.
+- It only reads pages you have open, on purpose. Bulk scraping LinkedIn breaks LinkedIn's terms of use.
 - pdf.js (Apache-2.0) is bundled in `lib/pdfjs` to read phone numbers from PDF CVs.

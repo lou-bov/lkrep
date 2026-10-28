@@ -241,3 +241,36 @@ function clickCreateCv() {
   if (btn) btn.click();
   return !!btn;
 }
+
+// The Create CV form's root in this frame, or null: the "Create CV" dialog, or a
+// frame whose page is the form (it has a name and an e-mail field).
+function hronCreateCvRoot() {
+  const isVisible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const dialogs = [...document.querySelectorAll("[role=dialog], .modal, [class*='modal'], [class*='Modal'], [class*='dialog']")].filter(isVisible);
+  const dialog = dialogs.find((d) => /create cv|opret cv/i.test(d.textContent));
+  if (dialog) return dialog;
+  if (window !== window.top && document.body && /e-?mail/i.test(document.body.innerText) && /\b(name|navn)\b/i.test(document.body.innerText) &&
+      document.querySelector("input:not([type=hidden])")) {
+    return document.body;
+  }
+  return null;
+}
+
+// True while a Create CV form with fields is open in this frame.
+function hronHasCreateCvForm() {
+  const root = hronCreateCvRoot();
+  return !!(root && root.querySelector("input:not([type=hidden]):not([type=file])"));
+}
+
+// Clicks Save in the Create CV form. Returns true if a Save button was clicked.
+function hronClickSave() {
+  const root = hronCreateCvRoot();
+  if (!root) return false;
+  const isVisible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const btn = [...root.querySelectorAll("button, input[type=submit], input[type=button], a.button, a.btn")]
+    .filter(isVisible)
+    .find((b) => /^(save|gem)$/i.test((b.textContent || b.value || "").replace(/\s+/g, " ").trim()));
+  if (!btn) return false;
+  btn.click();
+  return true;
+}

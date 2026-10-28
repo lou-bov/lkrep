@@ -4,113 +4,222 @@
 <meta charset="utf-8">
 <title>LinkedIn → HR-ON</title>
 <style>
-  body { font: 13px/1.4 system-ui, sans-serif; width: 400px; margin: 0; padding: 12px; color: #1d1d1f; }
-  body.page { width: auto; max-width: 720px; margin: 24px auto; }
-  h1 { font-size: 15px; margin: 0 0 8px; }
-  h2 { font-size: 13px; margin: 12px 0 4px; }
-  label { display: block; margin-top: 6px; font-weight: 600; font-size: 12px; }
-  input, textarea, select { width: 100%; box-sizing: border-box; padding: 5px 6px; border: 1px solid #c7c7cc; border-radius: 4px; font: inherit; }
-  input[type=file] { border: 0; padding: 2px 0; }
-  textarea { height: 50px; resize: vertical; }
-  .row { display: flex; gap: 6px; }
-  .row > div { flex: 1; }
-  button { margin-top: 10px; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: #0a66c2; color: #fff; font-weight: 600; cursor: pointer; }
-  button.secondary { background: #e5e5ea; color: #1d1d1f; }
-  button.small { width: auto; margin: 4px 4px 0 0; padding: 4px 8px; font-size: 12px; }
-  .msg { margin-top: 8px; font-size: 12px; color: #555; }
-  .cv { font-size: 12px; color: #2e7d32; margin-top: 4px; }
-  .item { padding: 8px 0; border-bottom: 1px solid #eee; }
-  .item .name { font-weight: 600; }
-  .item .meta { color: #555; font-size: 12px; }
-  .hidden { display: none; }
-  .check { margin-bottom: 8px; padding: 8px; border-radius: 6px; background: #f2f2f7; font-size: 12px; }
-  .check:empty { display: none; }
-  .check.found { background: #fff4e5; color: #663c00; }
-  .check.none { background: #e8f5e9; color: #1b5e20; }
-  .check .match { margin-top: 4px; }
-  #people { margin-bottom: 8px; }
-  .people-list { max-height: 300px; overflow-y: auto; border: 1px solid #e5e5ea; border-radius: 6px; margin-top: 6px; }
-  .person { display: flex; gap: 6px; align-items: flex-start; padding: 5px 6px; border-bottom: 1px solid #f2f2f7; }
-  .person.current { background: #eef4fb; }
-  .person input { width: auto; margin-top: 2px; }
-  .person .who { flex: 1; min-width: 0; }
-  .person .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .badge { font-size: 11px; padding: 0 5px; border-radius: 8px; background: #e5e5ea; }
-  .badge.in { background: #fff4e5; color: #663c00; }
-  .badge.new { background: #e8f5e9; color: #1b5e20; }
-  .row-buttons { display: flex; gap: 4px; }
-  .person { cursor: pointer; }
-  .editing { position: sticky; top: 0; z-index: 1; margin: 0 -12px 6px; padding: 6px 12px; background: #0a66c2; color: #fff; font-weight: 600; }
-  .editing:empty { display: none; }
-  .tag-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; max-height: 110px; overflow-y: auto; }
-  .chip { width: auto; margin: 0; padding: 2px 8px; border: 1px solid #c7c7cc; border-radius: 10px; background: #fff; color: #1d1d1f; font-weight: 400; font-size: 12px; }
-  .chip.on { background: #0a66c2; border-color: #0a66c2; color: #fff; }
-  .chip.saved::before { content: "✓ "; }
-  .chip.saved:not(.on) { text-decoration: line-through; color: #b71c1c; border-color: #b71c1c; }
-  #saveTags { display: block; margin-top: 6px; }
-  #saveTags:disabled { background: #c7c7cc; cursor: default; }
-  .row-buttons button { flex: 1; }
-  a { color: #0a66c2; }
+  :root {
+    --ink: #16181d; --muted: #5b616e; --line: #eceef1; --field: #d4d6db; --soft: #f3f5f8;
+    --new-bg: #e6f4ec; --new-ink: #145c38; --in-bg: #fff1dc; --in-ink: #6b3a00;
+    --link: #0a58b0; --bad: #b42318; --ok: #1b7f4b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 420px; height: 600px; font: 13px/1.4 Inter, "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #fff; }
+  body.window { width: auto; height: 100vh; }
+  .app { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  .hidden { display: none !important; }
+  a { color: var(--link); }
+  button { font: inherit; }
+  .scroll { flex: 1; overflow-y: auto; }
+  .scroll::-webkit-scrollbar { width: 6px; } .scroll::-webkit-scrollbar-thumb { background: var(--field); border-radius: 3px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .head-right { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+  .icon-btn { border: 0; background: transparent; padding: 4px; cursor: pointer; color: var(--muted); display: flex; }
+
+  .footer { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  .primary { width: 100%; height: 44px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .primary:disabled { background: var(--line); color: var(--muted); cursor: default; }
+  .secondary { border: 1px solid var(--field); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--ink); }
+  .secondary:disabled { color: var(--muted); cursor: default; }
+  .hint { color: var(--muted); font-size: 11px; text-align: center; }
+  .msg { color: var(--muted); font-size: 12px; }
+  .msg:empty { display: none; }
+
+  /* list */
+  .list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 8px; }
+  .list-head b { font-size: 15px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .people { padding: 0 8px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; }
+  .row.checked { background: var(--soft); }
+  .row input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); cursor: pointer; flex: none; }
+  .row-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; text-align: left; cursor: pointer; color: var(--ink); }
+  .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .who .name { font-weight: 600; }
+  .who .line { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .avatar { flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; background: #e8edf5; color: #22324d; width: 32px; height: 32px; font-size: 12px; }
+  .avatar.in { background: var(--in-bg); color: var(--in-ink); }
+  .avatar.big { width: 52px; height: 52px; font-size: 16px; }
+  .badge { flex: none; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
+  .badge.new { background: var(--new-bg); color: var(--new-ink); }
+  .badge.in { background: var(--in-bg); color: var(--in-ink); }
+  .bulk-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+  /* person */
+  .person { padding: 12px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .back { align-self: flex-start; border: 0; background: transparent; padding: 0; color: var(--link); font-size: 12px; cursor: pointer; }
+  .card { display: flex; gap: 12px; align-items: center; }
+  .card .name { font-weight: 700; font-size: 16px; }
+  .card .line { color: #3d424d; font-size: 12px; margin-top: 2px; }
+  .card .place { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .status { border-radius: 10px; padding: 10px 12px; font-size: 12px; background: var(--soft); color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+  .status.new { background: var(--new-bg); color: var(--new-ink); }
+  .status.in { background: var(--in-bg); color: var(--in-ink); }
+  .status .app { display: flex; justify-content: space-between; gap: 8px; }
+  .status .app a { white-space: nowrap; color: inherit; font-weight: 600; }
+  .status .again { align-self: flex-start; font-size: 11px; color: inherit; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > .label { font-weight: 600; font-size: 12px; display: flex; justify-content: space-between; align-items: baseline; }
+  .field > .label span { font-weight: 400; color: var(--muted); font-size: 11px; }
+  select, input[type=text], input[type=email] { height: 36px; border: 1px solid var(--field); border-radius: 8px; padding: 0 10px; font: inherit; color: var(--ink); background: #fff; width: 100%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; }
+  .chip { border: 1px solid var(--field); background: #fff; color: var(--ink); border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip.saved.on::before { content: "✓ "; }
+  .chip.saved:not(.on) { color: var(--bad); border-color: var(--bad); text-decoration: line-through; }
+  .new-tag { display: flex; gap: 6px; }
+  .new-tag input { height: 30px; font-size: 12px; }
+  .drop { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 12px; border-radius: 10px; font-size: 12px; cursor: pointer; text-align: left; border: 1px dashed #b9bdc6; background: #fafbfc; color: #3d424d; }
+  .drop.has { border: 1px solid #b7dfc8; background: #f2faf5; color: var(--new-ink); }
+  .drop.over { border-color: var(--ink); background: var(--soft); }
+  .cv-links { display: flex; flex-wrap: wrap; gap: 6px; }
+  details { border: 1px solid var(--line); border-radius: 10px; }
+  summary { padding: 10px 12px; cursor: pointer; font-size: 12px; list-style: none; display: flex; justify-content: space-between; }
+  summary::-webkit-details-marker { display: none; }
+  summary span { color: var(--muted); }
+  details[open] summary .arrow { transform: rotate(180deg); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 12px 12px; }
+  .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+  .grid label.wide { grid-column: span 2; }
+  .grid input { height: 32px; font-size: 13px; }
+
+  /* progress */
+  .progress { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .progress h2 { margin: 0; font-size: 16px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar div { height: 100%; width: 0; background: var(--ink); border-radius: 3px; transition: width .3s; }
+  .bar.done div { background: var(--ok); }
+  .step { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #f3f4f6; }
+  .dot { flex: none; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--line); color: var(--muted); }
+  .dot.busy { background: var(--ink); color: #fff; }
+  .dot.done { background: var(--ok); color: #fff; }
+  .dot.skip { background: var(--in-bg); color: var(--in-ink); }
+  .dot.fail { background: #fde8e6; color: var(--bad); }
+  .step .text { display: block; color: var(--muted); font-size: 12px; }
+  .step .fail-text { color: var(--bad); }
+  .empty { padding: 24px 16px; color: var(--muted); }
 </style>
 </head>
 <body>
-  <h1>LinkedIn → HR-ON <span id="version" style="font-weight:400;color:#888;font-size:11px"></span></h1>
-
-  <section id="linkedin" class="hidden">
-    <div id="people" class="hidden"></div>
-    <div id="editing" class="editing"></div>
-    <div id="hronCheck" class="check"></div>
-    <div class="row">
-      <div><label for="firstName">First name</label><input id="firstName"></div>
-      <div><label for="lastName">Last name</label><input id="lastName"></div>
+<div class="app">
+  <header>
+    <div class="brand"><div class="logo">F5</div>LinkedIn → HR-ON <span id="version" class="sub"></span></div>
+    <div class="head-right">
+      <span id="hronInfo"></span>
+      <button id="openSettings" class="icon-btn" aria-label="Settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+      </button>
     </div>
-    <label for="email">Email</label><input id="email">
-    <label for="phone">Mobile</label><input id="phone">
-    <label for="headline">Title</label><input id="headline">
-    <label for="company">Company</label><input id="company">
-    <label for="location">Location</label><input id="location">
-    <label for="linkedinUrl">LinkedIn URL</label><input id="linkedinUrl">
+  </header>
 
-    <h2>HR-ON</h2>
-    <label for="job">Job</label><input id="job" list="jobList" placeholder="Job posting title in HR-ON">
-    <datalist id="jobList"></datalist>
-    <label for="tags">Tags (comma-separated, or click below)</label><input id="tags">
-    <div id="tagPicker" class="tag-picker"></div>
-    <label for="notes">Note</label><textarea id="notes"></textarea>
-
-    <h2>CV</h2>
-    <div id="cvLinks"></div>
-    <input type="file" id="cvFile" accept=".pdf,.doc,.docx,.rtf,.txt,.odt">
-    <div class="cv" id="cvStatus"></div>
-
-    <button id="addAndOpen">Add and open HR-ON</button>
-    <button id="add" class="secondary">Add to queue</button>
+  <!-- Not on LinkedIn -->
+  <section id="other" class="empty hidden">
+    <p><b>Open LinkedIn Recruiter</b> — a pipeline, project, search results or a profile — and click the extension again.</p>
+    <p class="sub">You also need to be logged in to HR-ON in another tab.</p>
   </section>
 
-  <section id="hron" class="hidden">
-    <p>1. On the job's applicant list, click <b>Fill form</b>, check the form and click <b>Save</b> in HR-ON.<br>
-    2. Click <b>Add tags</b>.</p>
-    <div class="cv" id="currentJob"></div>
+  <!-- List of people on a LinkedIn page -->
+  <section id="listScreen" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="list-head">
+      <div><b id="listTitle"></b><div id="listSub" class="sub"></div></div>
+      <button id="selectNew" class="secondary">Select all new</button>
+    </div>
+    <div id="people" class="people scroll"></div>
+    <div class="footer">
+      <div class="bulk-opts">
+        <select id="bulkJob" aria-label="Job posting for the people you tick"></select>
+        <input id="bulkTags" type="text" aria-label="Tags for the people you tick" placeholder="Tags, comma-separated">
+      </div>
+      <button id="addMany" class="primary" disabled>Tick people to add them in one go</button>
+      <div class="hint">Click a person to check or edit them first · people already in HR-ON are skipped</div>
+    </div>
   </section>
 
-  <section id="queueSection" class="hidden">
-    <h2>Queue</h2>
-    <div id="queue"></div>
+  <!-- One person -->
+  <section id="personScreen" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="person scroll">
+      <button id="back" class="back hidden">← All people</button>
+      <div class="card">
+        <div id="pAvatar" class="avatar big"></div>
+        <div style="flex:1;min-width:0">
+          <div id="pName" class="name"></div>
+          <div id="pLine" class="line"></div>
+          <div id="pPlace" class="place"></div>
+        </div>
+      </div>
+      <div id="status" class="status">Checking HR-ON…</div>
+
+      <div id="jobField" class="field">
+        <label class="label" for="job">Job posting</label>
+        <select id="job"></select>
+      </div>
+
+      <div class="field">
+        <div class="label">Tags <span id="tagHint">Click to add or remove</span></div>
+        <div id="chips" class="chips"></div>
+        <div class="new-tag">
+          <input id="newTag" type="text" placeholder="New tag" aria-label="New tag">
+          <button id="addTag" class="secondary">Add</button>
+        </div>
+        <button id="saveTags" class="secondary hidden" style="align-self:flex-start"></button>
+      </div>
+
+      <div id="cvField" class="field">
+        <div class="label">CV</div>
+        <div id="cvLinks" class="cv-links"></div>
+        <button id="drop" class="drop">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>
+          <span id="dropText">Drop the CV here, or click to choose a file</span>
+        </button>
+        <input id="cvFile" type="file" accept=".pdf,.doc,.docx,.rtf,.txt,.odt" class="hidden">
+      </div>
+
+      <details id="details">
+        <summary><b>Details</b> <span>· e-mail <span id="sumEmail"></span> <span class="arrow">▾</span></span></summary>
+        <div class="grid">
+          <label>First name<input id="firstName" type="text"></label>
+          <label>Last name<input id="lastName" type="text"></label>
+          <label>E-mail<input id="email" type="email"></label>
+          <label>Mobile<input id="phone" type="text"></label>
+          <label>Title<input id="headline" type="text"></label>
+          <label>Company<input id="company" type="text"></label>
+          <label class="wide">Location<input id="location" type="text"></label>
+          <label class="wide">LinkedIn (goes in HR-ON's Address field)<input id="linkedinUrl" type="text"></label>
+        </div>
+      </details>
+      <div id="msg" class="msg"></div>
+    </div>
+    <div class="footer">
+      <button id="primary" class="primary">Add to HR-ON</button>
+    </div>
   </section>
 
-  <section id="other" class="hidden">
-    <p>Open a candidate profile in LinkedIn Recruiter, or open HR-ON to fill in candidates from the queue.</p>
+  <!-- Progress (separate window) -->
+  <section id="runScreen" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="progress scroll">
+      <h2 id="runTitle">Adding to HR-ON…</h2>
+      <div id="runSub" class="sub">Keep this window open. You can keep working on LinkedIn.</div>
+      <div id="bar" class="bar"><div></div></div>
+      <div id="steps"></div>
+    </div>
+    <div class="footer">
+      <button id="runButton" class="secondary" style="height:44px;border-radius:10px;font-size:14px">Stop after this person</button>
+    </div>
   </section>
+</div>
 
-  <div class="msg" id="msg"></div>
-  <div class="msg">
-    <a href="popup.html?view=queue" target="_blank">Open queue in a tab</a> ·
-    <a href="options.html" target="_blank">Settings</a>
-  </div>
-
-  <script src="extract.js"></script>
-  <script src="cvtext.js"></script>
-  <script src="hron.js"></script>
-  <script src="popup.js"></script>
+<script src="extract.js"></script>
+<script src="cvtext.js"></script>
+<script src="hron.js"></script>
+<script src="popup.js"></script>
 </body>
 </html>

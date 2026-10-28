@@ -1,29 +1,29 @@
-const FIELDS = ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl", "job", "tags", "notes"];
+// LinkedIn → HR-ON popup. Three views:
+// - on LinkedIn: the people on the page (if several) and one person's screen;
+// - the run window (popup.html?view=run): adds people to HR-ON one by one;
+// - anywhere else: a hint.
 const DEFAULT_HRON_URL = "https://recruit.hr-on.com/managerlogin.php";
 const MAX_CV_BYTES = 15 * 1024 * 1024;
 const $ = (id) => document.getElementById(id);
-const msg = (t) => ($("msg").textContent = t);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const el = (tag, props = {}, ...kids) => {
+  const e = Object.assign(document.createElement(tag), props);
+  e.append(...kids);
+  return e;
+};
+const show = (id, on = true) => $(id).classList.toggle("hidden", !on);
+const msg = (t) => ($("msg").textContent = t || "");
+const fullName = (p) => `${p.firstName || ""} ${p.lastName || ""}`.trim();
+const initials = (p) => ((p.firstName || " ")[0] + (p.lastName || " ")[0]).trim().toUpperCase() || "?";
+const personKey = (p) => p.linkedinUrl || fullName(p);
+const splitTags = (s) => (s || "").split(",").map((t) => t.trim()).filter(Boolean);
+const hasTag = (list, t) => list.some((x) => x.toLowerCase() === t.toLowerCase());
+const cvUrl = (m) => `${HRON}view-cv/${m.cvid}/${m.appid}/#applications`;
 
-const getQueue = async () => (await chrome.storage.local.get({ queue: [] })).queue;
-const setQueue = (queue) => chrome.storage.local.set({ queue });
-const getCv = async (id) => (await chrome.storage.local.get(`cv:${id}`))[`cv:${id}`] || null;
-const setCv = (id, cv) => chrome.storage.local.set({ [`cv:${id}`]: cv });
 const getSettings = () =>
   chrome.storage.sync.get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "Linkedin", fixedEmail: "xyz@f5.dk", selectors: {} });
-const getKnownJobs = async () => (await chrome.storage.local.get({ knownJobs: [] })).knownJobs;
-const getJobUrls = async () => (await chrome.storage.local.get({ jobUrls: {} })).jobUrls;
 
-// Finds a phone number in the CV; returns "" if none or the file can't be read.
-async function phoneFromCv(cv) {
-  try {
-    return findPhone(await cvText(cv));
-  } catch (e) {
-    console.warn("Could not read CV text", e);
-    return "";
-  }
-}
-
-let pendingCv = null; // CV picked/fetched in the LinkedIn view, saved when the candidate is added.
+// ---------- CV files ----------
 
 function toBase64(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -47,8 +47,8 @@ function filenameFrom(res, url, fallback) {
   return `${fallback}.${ext}`;
 }
 
-// Downloads a CV using the user's LinkedIn session. Tries from the extension
-// first (no CORS limits), then from inside the LinkedIn tab.
+// Downloads a CV using the user's LinkedIn session: from the extension first
+// (no CORS limits), then from inside the LinkedIn tab.
 async function fetchCv(url, tabId, fallbackName) {
   try {
     const res = await fetch(url, { credentials: "include" });
@@ -78,418 +78,493 @@ async function fetchCv(url, tabId, fallbackName) {
   }
 }
 
-async function activeTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-function readForm() {
-  const c = {};
-  for (const f of FIELDS) c[f] = $(f).value.trim();
-  return c;
-}
-
-async function addToQueue() {
-  const c = readForm();
-  if (!c.firstName && !c.lastName) {
-    msg("Name is missing.");
-    return false;
+// Finds a phone number in the CV; "" if none or the file can't be read.
+async function phoneFromCv(cv) {
+  try {
+    return findPhone(await cvText(cv));
+  } catch {
+    return "";
   }
-  const queue = await getQueue();
-  const existing = queue.find((q) => q.linkedinUrl && q.linkedinUrl === c.linkedinUrl);
-  const item = existing || { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
-  Object.assign(item, c, { addedAt: Date.now() });
-  if (pendingCv) {
-    await setCv(item.id, pendingCv);
-    item.cvName = pendingCv.name;
-  }
-  if (!existing) queue.push(item);
-  await setQueue(queue);
-  msg(existing ? "Candidate updated in the queue." : `Added. ${queue.length} in the queue.`);
-  return true;
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
+// ---------- HR-ON data shared by the views ----------
 
-// HR-ON's applicant index is loaded once per popup and shared by everything that needs it.
 let indexPromise = null;
 function getIndex(force = false) {
-  if (force || !indexPromise) indexPromise = hronIndex(force);
+  if (force || !indexPromise) {
+    indexPromise = hronIndex(force);
+    indexPromise
+      .then((ix) => ($("hronInfo").textContent = `HR-ON: ${ix.jobs} jobs · ${ix.rows.length} applications`))
+      .catch((e) => ($("hronInfo").textContent = /logged in/i.test(e.message) ? "HR-ON: not logged in" : "HR-ON: not reachable"));
+  }
   return indexPromise;
 }
-let refreshBadges = () => {};
+// The person's HR-ON applications, newest first.
+const matchesIn = (index, p) => hronMatches(index, p.firstName, p.lastName).sort((a, b) => Number(b.appid) - Number(a.appid));
 
-// The person's applications in HR-ON, if any (newest first); drives the main button.
-let currentMatches = [];
-const cvUrl = (m) => `${HRON}view-cv/${m.cvid}/${m.appid}/#applications`;
+// ---------- LinkedIn view ----------
 
-function setMainButton() {
-  $("addAndOpen").textContent = currentMatches.length ? "Open CV in HR-ON (already there)" : "Add and open HR-ON";
-}
+const S = {
+  tab: null,
+  settings: null,
+  people: [], // everyone on the LinkedIn page
+  total: null,
+  checked: new Set(), // indexes ticked for "Add N to HR-ON"
+  edited: new Map(), // personKey → the person as edited on their screen
+  cur: null, // the person on the person screen
+  jobs: [],
+  allTags: [],
+  lastJobId: "",
+};
 
-// Opens a URL in the HR-ON tab if there is one, else in a new tab.
-// Without a URL, just switches to the HR-ON tab (or opens `fallback`).
-async function openInHrOn(url, fallback = url) {
-  const [existing] = await chrome.tabs.query({ url: `${HRON}*` });
-  if (existing) {
-    await chrome.tabs.update(existing.id, { active: true, ...(url ? { url } : {}) });
-    await chrome.windows.update(existing.windowId, { focused: true });
-  } else {
-    await chrome.tabs.create({ url: url || fallback });
+// A person as the person screen edits them (kept while the popup is open).
+function workingCopy(p) {
+  const key = personKey(p);
+  if (!S.edited.has(key)) {
+    S.edited.set(key, {
+      ...p,
+      email: S.settings.fixedEmail,
+      tags: splitTags(S.settings.defaultTags),
+      jobId: S.lastJobId,
+      cv: null,
+      matches: null, // null = still checking HR-ON
+      savedTags: null, // their tags in HR-ON, if they're there
+      error: "",
+    });
   }
+  return S.edited.get(key);
 }
 
-// Shows whether the person already exists in HR-ON: which job postings, status and tags.
-async function checkHrOn(firstName, lastName, force = false) {
-  currentMatches = [];
-  setMainButton();
-  const box = $("hronCheck");
-  box.className = "check";
-  box.textContent = "Checking HR-ON… (the first check takes a few seconds)";
-  if (!firstName && !lastName) return (box.textContent = "");
+function fillJobSelect(select, value) {
+  select.replaceChildren(
+    el("option", { value: "", textContent: S.jobs.length ? "Choose job posting…" : "Loading job postings…" }),
+    ...S.jobs.map((j) => el("option", { value: j.id, textContent: j.title }))
+  );
+  select.value = S.jobs.some((j) => j.id === value) ? value : "";
+}
+
+function rememberJob(id) {
+  S.lastJobId = id;
+  chrome.storage.local.set({ lastJobId: id });
+}
+
+// ----- list screen -----
+
+function renderList() {
+  show("listScreen");
+  show("personScreen", false);
+  const n = S.people.length;
+  $("listTitle").textContent = `${n} people on this page`;
+  $("listSub").textContent = S.total && S.total > n ? `${S.total} in total · go to LinkedIn's next page for more` : "";
+  fillJobSelect($("bulkJob"), S.lastJobId);
+  if (!$("bulkTags").value) $("bulkTags").value = S.settings.defaultTags;
+
+  const box = $("people");
+  box.replaceChildren();
+  S.people.forEach((p, i) => {
+    const copy = workingCopy(p);
+    const inHron = copy.matches && copy.matches.length > 0;
+    const chk = el("input", { type: "checkbox", checked: S.checked.has(i) });
+    chk.setAttribute("aria-label", `Select ${fullName(p)}`);
+    const badge = el("span", {
+      className: `badge ${copy.matches == null ? "" : inHron ? "in" : "new"}`,
+      textContent: copy.matches == null ? "…" : inHron ? "In HR-ON" : "New",
+    });
+    const btn = el(
+      "button",
+      { className: "row-btn", onclick: () => openPerson(i) },
+      el("span", { className: `avatar ${inHron ? "in" : ""}`, textContent: initials(p) }),
+      el(
+        "span",
+        { className: "who" },
+        el("span", { className: "name", textContent: fullName(p) }),
+        el("span", { className: "line", textContent: [p.headline, p.company].filter(Boolean).join(" · ") })
+      ),
+      badge
+    );
+    const row = el("div", { className: `row ${S.checked.has(i) ? "checked" : ""}` }, chk, btn);
+    chk.onchange = () => {
+      chk.checked ? S.checked.add(i) : S.checked.delete(i);
+      row.classList.toggle("checked", chk.checked);
+      updateBulkButton();
+    };
+    box.append(row);
+  });
+  updateBulkButton();
+}
+
+function updateBulkButton() {
+  const n = S.checked.size;
+  const b = $("addMany");
+  b.disabled = !n || !$("bulkJob").value;
+  b.textContent = !n ? "Tick people to add them in one go" : !$("bulkJob").value ? "Choose a job posting first" : `Add ${n} to HR-ON`;
+}
+
+const onScreen = (id) => !$(id).classList.contains("hidden");
+
+// Fills in New / In HR-ON for everyone once the HR-ON index is loaded.
+async function markPeople() {
   try {
-    const index = await getIndex(force);
-    const matches = hronMatches(index, firstName, lastName).sort((a, b) => Number(b.appid) - Number(a.appid));
-    // Ignore a late answer for someone the user has already moved on from.
-    if (`${$("firstName").value} ${$("lastName").value}`.trim() !== `${firstName} ${lastName}`.trim()) return;
-    currentMatches = matches;
-    setMainButton();
-    box.textContent = "";
-    if (!matches.length) {
-      box.className = "check none";
-      box.append(`Not in HR-ON (checked ${index.rows.length} applications on ${index.jobs} job postings).`);
-    } else {
-      box.className = "check found";
-      box.append(el("b", { textContent: `Already in HR-ON (${matches.length} application${matches.length > 1 ? "s" : ""})` }));
-      const tagsByCv = {};
-      for (const m of matches) {
-        const row = el("div", { className: "match" });
-        row.append(
-          el("a", { href: `${HRON}applications/company/?jobpostid=${m.jobId}`, target: "_blank", textContent: m.job }),
-          ` — ${m.status || "?"}, ${m.date} · `,
-          el("a", { href: cvUrl(m), target: "_blank", textContent: "Open CV" })
-        );
-        const tagLine = el("div", { className: "meta", textContent: "Tags: …" });
-        row.append(tagLine);
-        box.append(row);
-        tagsByCv[m.cvid] ??= hronTags(m.cvid, m.appid).catch(() => null);
-        tagsByCv[m.cvid].then((t) => (tagLine.textContent = `Tags: ${t == null ? "could not read" : t.join(", ") || "none"}`));
-      }
-      // Their current HR-ON tags go into the Tags field, ready to change and save.
-      const newest = matches[0];
-      const save = el("button", { id: "saveTags", className: "small", textContent: "Save tags to HR-ON", disabled: true });
-      box.append(save);
-      tagsByCv[newest.cvid].then((t) => {
-        if (t == null || !currentMatches.includes(newest)) return;
-        hronPerson = { cvid: newest.cvid, appid: newest.appid, tags: t };
-        $("tags").value = t.join(", ");
-        renderChips();
-      });
-      save.onclick = async () => {
-        save.disabled = true;
-        save.textContent = "Saving…";
-        try {
-          const res = await hronSetTags(newest.cvid, newest.appid, fieldTags());
-          const parts = [];
-          if (res.added.length) parts.push(`Added: ${res.added.join(", ")}.`);
-          if (res.removed.length) parts.push(`Removed: ${res.removed.join(", ")}.`);
-          if (res.failed.length) parts.push(`HR-ON did not accept: ${res.failed.join(", ")}.`);
-          msg(parts.join(" ") || "No changes.");
-          hronPerson = { ...hronPerson, tags: res.tags };
-          $("tags").value = res.tags.join(", ");
-          renderChips();
-        } catch (e) {
-          msg("Could not save tags: " + e.message);
-          syncChips();
-        }
-      };
+    const index = await getIndex();
+    for (const p of S.people) {
+      const copy = workingCopy(p);
+      if (copy.matches == null) copy.matches = matchesIn(index, copy);
     }
   } catch (e) {
-    box.className = "check none";
-    box.textContent = `Could not check HR-ON: ${e.message}`;
+    for (const p of S.people) workingCopy(p).error = e.message;
   }
-  const again = el("a", { href: "#", textContent: "Check again" });
-  again.onclick = (ev) => {
-    ev.preventDefault();
-    checkHrOn($("firstName").value.trim(), $("lastName").value.trim(), true).then(() => refreshBadges());
-  };
-  box.append(" ", again);
-}
-
-// Puts one person into the form and checks them in HR-ON.
-let fixedEmail = "xyz@f5.dk"; // from Settings; used for everyone unless typed over
-
-function loadPerson(p) {
-  $("editing").textContent = `Editing: ${`${p.firstName || ""} ${p.lastName || ""}`.trim() || "—"}`;
-  for (const f of ["firstName", "lastName", "phone", "headline", "company", "location", "linkedinUrl"]) $(f).value = p[f] || "";
-  $("email").value = fixedEmail;
-  $("tags").value = defaultTags;
-  hronPerson = null;
-  renderChips();
-  pendingCv = null;
-  $("cvStatus").textContent = "";
-  $("cvFile").value = "";
-  return checkHrOn(p.firstName, p.lastName);
-}
-
-// List pages (pipeline, project, search): everyone on the page, with their HR-ON status.
-function showPeople({ people, total }, selected = 0) {
-  const box = $("people");
-  box.classList.remove("hidden");
-  const more = total && total > people.length ? ` (${total} in total; go to the next results page for more)` : "";
-  box.append(el("b", { textContent: `${people.length} people on this page${more}.` }));
-  box.append(el("div", { className: "meta", textContent: "Click a person to edit them in the form below, or tick several and add them all to the queue." }));
-  const list = el("div", { className: "people-list" });
-  const rows = people.map((p) => {
-    const row = el("div", { className: "person" });
-    const chk = el("input", { type: "checkbox" });
-    const name = el("a", { href: "#", textContent: `${p.firstName} ${p.lastName}`.trim() });
-    // Clicking the row (or ticking its box) loads that person into the form.
-    const select = () => {
-      list.querySelectorAll(".person").forEach((r) => r.classList.remove("current"));
-      row.classList.add("current");
-      loadPerson(p);
-    };
-    row.onclick = (ev) => {
-      if (ev.target !== chk) ev.preventDefault();
-      if (ev.target === chk && !chk.checked) return;
-      select();
-    };
-    const badge = el("span", { className: "badge", textContent: "…" });
-    const sub = el("div", { className: "meta", textContent: [p.headline, p.company].filter(Boolean).join(" · ") });
-    const text = el("div", { className: "who" });
-    text.append(name, " ", badge, sub);
-    row.append(chk, text);
-    list.append(row);
-    return { p, row, chk, badge };
-  });
-  rows[selected]?.row.classList.add("current");
-  setTimeout(() => rows[selected]?.row.scrollIntoView({ block: "nearest" }), 0);
-  box.append(list);
-
-  refreshBadges = async () => {
-    try {
-      const index = await getIndex();
-      for (const r of rows) {
-        const m = hronMatches(index, r.p.firstName, r.p.lastName);
-        r.isNew = !m.length;
-        r.badge.className = `badge ${m.length ? "in" : "new"}`;
-        r.badge.textContent = m.length ? `In HR-ON: ${[...new Set(m.map((x) => x.job))].join(", ")}` : "New";
-      }
-    } catch (e) {
-      rows.forEach((r) => (r.badge.textContent = ""));
-    }
-  };
-  refreshBadges();
-
-  const selectNew = el("button", { className: "small secondary", textContent: "Select all new" });
-  selectNew.onclick = () => rows.forEach((r) => (r.chk.checked = !!r.isNew));
-  const addSel = el("button", { className: "small", textContent: "Add selected to queue" });
-  addSel.onclick = async () => {
-    const chosen = rows.filter((r) => r.chk.checked).map((r) => r.p);
-    if (!chosen.length) return msg("Tick the people to add first.");
-    const queue = await getQueue();
-    let added = 0;
-    for (const p of chosen) {
-      const dup = queue.some((q) => (p.linkedinUrl && q.linkedinUrl === p.linkedinUrl) || sameName(`${q.firstName} ${q.lastName}`, `${p.firstName} ${p.lastName}`));
-      if (dup) continue;
-      queue.push({ ...p, email: fixedEmail, job: $("job").value.trim(), tags: $("tags").value.trim(), id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, addedAt: Date.now() });
-      added++;
-    }
-    await setQueue(queue);
-    msg(`Added ${added} to the queue` + (added < chosen.length ? ` (${chosen.length - added} already there)` : "") + `, with the job and tags below. ${queue.length} in the queue.`);
-  };
-  box.append(el("div", { className: "row-buttons" }));
-  box.lastChild.append(selectNew, addSel);
-}
-
-// Tags: HR-ON's tag list as chips under the Tags field (click to add/remove).
-// For someone already in HR-ON, the field starts with their current tags.
-let allTags = [];
-let defaultTags = "";
-let hronPerson = null; // { cvid, appid, tags } of the person's newest HR-ON application
-
-const fieldTags = () => $("tags").value.split(",").map((t) => t.trim()).filter(Boolean);
-const hasTag = (list, t) => list.some((x) => x.toLowerCase() === t.toLowerCase());
-
-function renderChips() {
-  const saved = hronPerson ? hronPerson.tags : [];
-  const names = [...allTags];
-  for (const t of [...saved, ...fieldTags()]) if (!hasTag(names, t)) names.push(t);
-  const chips = names.map((tag) => {
-    const chip = el("button", { type: "button", className: "chip", textContent: tag });
-    if (hasTag(saved, tag)) chip.title = "On this candidate in HR-ON";
-    chip.onclick = () => {
-      const list = fieldTags();
-      const i = list.findIndex((t) => t.toLowerCase() === tag.toLowerCase());
-      if (i >= 0) list.splice(i, 1);
-      else list.push(tag);
-      $("tags").value = list.join(", ");
-      syncChips();
-    };
-    return chip;
-  });
-  $("tagPicker").replaceChildren(...chips);
-  syncChips();
-}
-
-function syncChips() {
-  const list = fieldTags();
-  const saved = hronPerson ? hronPerson.tags : [];
-  for (const c of $("tagPicker").children) {
-    c.classList.toggle("on", hasTag(list, c.textContent));
-    c.classList.toggle("saved", hasTag(saved, c.textContent));
-  }
-  // Show "Save tags" only when the selection differs from HR-ON.
-  const btn = $("saveTags");
-  if (btn) {
-    const same = saved.length === list.length && saved.every((t) => hasTag(list, t));
-    btn.disabled = same;
-    btn.textContent = same ? "Tags are up to date in HR-ON" : "Save tags to HR-ON";
+  if (onScreen("listScreen")) renderList();
+  if (S.cur && onScreen("personScreen")) {
+    renderPerson();
+    loadSavedTags(S.cur);
   }
 }
 
-async function showTagPicker() {
-  $("tags").addEventListener("input", syncChips);
+// ----- person screen -----
+
+function openPerson(i) {
+  S.cur = workingCopy(S.people[i]);
+  show("listScreen", false);
+  show("personScreen");
+  show("back", S.people.length > 1);
+  $("details").open = false;
+  msg("");
+  renderPerson();
+  loadSavedTags(S.cur);
+  // Next time the popup opens, start on this person.
+  chrome.storage.local.set({ liLastClicked: { person: S.people[i], at: Date.now() } });
+}
+
+// For someone already in HR-ON: their current tags go into the tag picker.
+async function loadSavedTags(c) {
+  if (c.savedTags || !c.matches || !c.matches.length) return;
   try {
-    allTags = await hronTagList(await getIndex());
+    const names = await hronTags(c.matches[0].cvid, c.matches[0].appid);
+    c.savedTags = names;
+    c.tags = [...names];
   } catch {
-    /* HR-ON not reachable; the text field still works */
+    c.savedTags = null;
   }
-  renderChips();
+  if (S.cur === c) renderPerson();
 }
+
+function renderPerson() {
+  const c = S.cur;
+  const inHron = !!(c.matches && c.matches.length);
+  $("pAvatar").className = `avatar big ${inHron ? "in" : ""}`;
+  $("pAvatar").textContent = initials(c);
+  $("pName").textContent = fullName(c) || "—";
+  $("pLine").textContent = [c.headline, c.company].filter(Boolean).join(" · ");
+  $("pPlace").textContent = c.location || "";
+  for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) {
+    if (document.activeElement !== $(f)) $(f).value = c[f] || "";
+  }
+  $("sumEmail").textContent = c.email || "none";
+
+  // HR-ON status
+  const st = $("status");
+  st.replaceChildren();
+  if (c.error) {
+    st.className = "status";
+    st.append(`Could not check HR-ON: ${c.error}`);
+  } else if (c.matches == null) {
+    st.className = "status";
+    st.append("Checking HR-ON… (the first check takes a few seconds)");
+  } else if (!inHron) {
+    st.className = "status new";
+    const line = el("span", { textContent: "New — not in HR-ON" });
+    st.append(line);
+    getIndex()
+      .then((ix) => (line.textContent = `New — not in HR-ON (checked ${ix.rows.length} applications on ${ix.jobs} jobs)`))
+      .catch(() => {});
+  } else {
+    st.className = "status in";
+    st.append(el("b", { textContent: `Already in HR-ON · ${c.matches.length} application${c.matches.length > 1 ? "s" : ""}` }));
+    for (const m of c.matches) {
+      st.append(
+        el(
+          "div",
+          { className: "app" },
+          el("span", { textContent: `${m.job} — ${m.status || "?"}, ${m.date}` }),
+          el("a", { href: cvUrl(m), target: "_blank", textContent: "Open CV" })
+        )
+      );
+    }
+  }
+  if (c.matches != null || c.error) {
+    const again = el("a", { href: "#", className: "again", textContent: "Check again" });
+    again.onclick = (ev) => {
+      ev.preventDefault();
+      for (const p of S.edited.values()) Object.assign(p, { matches: null, savedTags: null, error: "" });
+      renderPerson();
+      getIndex(true);
+      markPeople();
+    };
+    st.append(again);
+  }
+
+  // Job (new people only)
+  show("jobField", !inHron);
+  fillJobSelect($("job"), c.jobId);
+
+  // Tags
+  const saved = c.savedTags || [];
+  $("tagHint").textContent = inHron ? "✓ = on the candidate in HR-ON" : "Click to add or remove";
+  const names = [...S.allTags];
+  for (const t of [...saved, ...c.tags]) if (!hasTag(names, t)) names.push(t);
+  $("chips").replaceChildren(
+    ...names.map((t) => {
+      const chip = el("button", { className: "chip", textContent: t });
+      chip.classList.toggle("on", hasTag(c.tags, t));
+      chip.classList.toggle("saved", hasTag(saved, t));
+      chip.onclick = () => {
+        c.tags = hasTag(c.tags, t) ? c.tags.filter((x) => x.toLowerCase() !== t.toLowerCase()) : [...c.tags, t];
+        renderPerson();
+      };
+      return chip;
+    })
+  );
+  const save = $("saveTags");
+  show("saveTags", inHron && c.savedTags != null);
+  const changed = saved.length !== c.tags.length || saved.some((t) => !hasTag(c.tags, t));
+  save.disabled = !changed;
+  save.textContent = changed ? "Save tag changes to HR-ON" : "Tags are up to date in HR-ON";
+
+  // CV (new people only)
+  show("cvField", !inHron);
+  $("drop").classList.toggle("has", !!c.cv);
+  $("dropText").textContent = c.cv
+    ? `${c.cv.name}${c.cvPhone ? ` · mobile found: ${c.cvPhone}` : ""} — click to change`
+    : "Drop the CV here, or click to choose a file";
+  $("cvLinks").replaceChildren(
+    ...(c.cvLinks || []).map((link) =>
+      el("button", {
+        className: "secondary",
+        textContent: `Fetch CV: ${link.text}`,
+        title: link.href,
+        onclick: async () => {
+          msg("Downloading CV…");
+          try {
+            await setCv(c, await fetchCv(link.href, S.tab.id, `${fullName(c)}_CV`.replace(/\s+/g, "_")));
+            msg("");
+          } catch (e) {
+            msg(`Could not download the CV (${e.message}). Download it yourself and drop it here.`);
+          }
+        },
+      })
+    )
+  );
+
+  // Main button
+  const primary = $("primary");
+  if (inHron) {
+    primary.disabled = false;
+    primary.textContent = "Open CV in HR-ON";
+  } else {
+    primary.disabled = c.matches == null || !c.jobId || !fullName(c);
+    primary.textContent = c.matches == null ? "Checking HR-ON…" : !c.jobId ? "Choose a job posting first" : "Add to HR-ON";
+  }
+}
+
+async function setCv(c, cv) {
+  c.cv = cv;
+  c.cvPhone = await phoneFromCv(cv);
+  if (c.cvPhone && !c.phone) c.phone = c.cvPhone;
+  if (S.cur === c) renderPerson();
+}
+
+// ----- start: read the LinkedIn page -----
 
 async function initLinkedIn(tab) {
-  $("linkedin").classList.remove("hidden");
-  const settings = await getSettings();
-  defaultTags = settings.defaultTags;
-  $("tags").value = defaultTags;
-  fixedEmail = settings.fixedEmail || "";
-  for (const job of await getKnownJobs()) {
-    const o = document.createElement("option");
-    o.value = job;
-    $("jobList").appendChild(o);
-  }
-  const { lastJob } = await chrome.storage.local.get({ lastJob: "" });
-  $("job").value = lastJob;
-  $("job").onchange = () => chrome.storage.local.set({ lastJob: $("job").value.trim() });
-
-  let profile = {};
-  try {
-    const run = async (func, args = []) => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }))[0].result;
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["extract.js"] });
-    let page = await run(() => extractLinkedInList());
-    if (page.people.length > 1 && (!page.total || page.total > page.people.length)) {
-      // Load everyone on this results page (LinkedIn shows up to 50 per page).
-      msg("Loading everyone on this page…");
-      await run((n) => liLoadAll(n), [Math.min(page.total || 50, 50)]);
-      page = await run(() => extractLinkedInList());
-      msg("");
-    }
-    // Details from an open profile (mobile, CV links, public profile link), if one is open.
-    const open = await run(() => extractLinkedInProfile());
-    if (page.people.length > 1) {
-      // Start on the person last clicked on the LinkedIn page, or whose profile is open.
-      const { liLastClicked: last } = await chrome.storage.local.get("liLastClicked");
-      const profileId = (tab.url.match(/\/profile\/([^/?#]+)/) || [])[1];
-      const same = (p, q) => q && ((p.linkedinUrl && p.linkedinUrl === q.linkedinUrl) || sameName(`${p.firstName} ${p.lastName}`, `${q.firstName} ${q.lastName}`));
-      let i = last && Date.now() - last.at < 30 * 60 * 1000 ? page.people.findIndex((p) => same(p, last.person)) : -1;
-      if (i < 0 && profileId) i = page.people.findIndex((p) => p.linkedinUrl.includes(profileId));
-      if (i < 0) i = 0;
-      showPeople(page, i);
-      profile = { ...page.people[i] };
-      if (same(profile, open)) {
-        profile.phone = open.phone;
-        profile.cvLinks = open.cvLinks;
-        if (/linkedin\.com\/in\//.test(open.linkedinUrl)) profile.linkedinUrl = open.linkedinUrl;
+  S.tab = tab;
+  S.settings = await getSettings();
+  S.lastJobId = (await chrome.storage.local.get({ lastJobId: "" })).lastJobId;
+  getIndex();
+  hronJobs()
+    .then((jobs) => {
+      S.jobs = jobs;
+      if (onScreen("listScreen")) {
+        fillJobSelect($("bulkJob"), $("bulkJob").value || S.lastJobId);
+        updateBulkButton();
       }
-    } else {
-      profile = open;
-    }
-  } catch (e) {
-    msg("Could not read the page: " + e.message);
-  }
-  showTagPicker();
-  loadPerson(profile).then(async () => {
-    // The check loads HR-ON's job list; offer it in the job picker.
-    const have = new Set([...$("jobList").options].map((o) => o.value));
-    for (const job of await getKnownJobs()) if (!have.has(job)) $("jobList").append(el("option", { value: job }));
-  });
+      if (S.cur) renderPerson();
+    })
+    .catch(() => {});
+  getIndex()
+    .then((ix) => hronTagList(ix))
+    .then((tags) => {
+      S.allTags = tags;
+      if (S.cur) renderPerson();
+    })
+    .catch(() => {});
 
-  const baseName = () => `${$("firstName").value}_${$("lastName").value}_CV`.replace(/\s+/g, "_");
-  const showCv = async () => {
-    $("cvStatus").textContent = pendingCv ? `Attached: ${pendingCv.name}` : "";
-    if (!pendingCv) return;
-    const phone = await phoneFromCv(pendingCv);
-    if (phone && !$("phone").value.trim()) {
-      $("phone").value = phone;
-      $("cvStatus").textContent += ` · mobile from CV: ${phone}`;
-    } else if (phone && phone !== $("phone").value.replace(/[^\d+]/g, "")) {
-      $("cvStatus").textContent += ` · CV also has: ${phone}`;
+  const run = async (func, args = []) => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }))[0].result;
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["extract.js"] });
+  let page = await run(() => extractLinkedInList());
+  if (page.people.length > 1 && (!page.total || page.total > page.people.length)) {
+    // LinkedIn draws people as you scroll: load everyone on this results page (up to 50).
+    $("hronInfo").textContent = "Loading everyone on the page…";
+    await run((n) => liLoadAll(n), [Math.min(page.total || 50, 50)]);
+    page = await run(() => extractLinkedInList());
+  }
+  // An open profile has extra details: mobile, CV links, public profile link.
+  const open = await run(() => extractLinkedInProfile());
+  const same = (p, q) => q && ((p.linkedinUrl && p.linkedinUrl === q.linkedinUrl) || sameName(fullName(p), fullName(q)));
+
+  if (page.people.length > 1) {
+    S.people = page.people;
+    S.total = page.total;
+    // Start on the person last clicked on LinkedIn, or whose profile is open.
+    const { liLastClicked: last } = await chrome.storage.local.get("liLastClicked");
+    const profileId = (tab.url.match(/\/profile\/([^/?#]+)/) || [])[1];
+    let i = last && Date.now() - last.at < 30 * 60 * 1000 ? S.people.findIndex((p) => same(p, last.person)) : -1;
+    if (i < 0 && profileId) i = S.people.findIndex((p) => p.linkedinUrl.includes(profileId));
+    const target = S.people[i];
+    if (target && same(target, open)) {
+      Object.assign(target, { phone: open.phone || target.phone, cvLinks: open.cvLinks });
+      if (/linkedin\.com\/in\//.test(open.linkedinUrl)) target.linkedinUrl = open.linkedinUrl;
     }
+    if (i >= 0) openPerson(i);
+    else renderList();
+  } else {
+    S.people = [open];
+    openPerson(0);
+  }
+  markPeople();
+}
+
+function wireLinkedInControls() {
+  $("back").onclick = () => {
+    S.cur = null;
+    renderList();
   };
-  const links = profile.cvLinks || [];
-  if (!links.length) {
-    $("cvLinks").innerHTML =
-      '<div class="msg" style="margin-top:0">No CV link found on this page. Choose a file instead (e.g. a CV the candidate sent, or LinkedIn "Save to PDF").</div>';
-  }
-  for (const link of links) {
-    const b = document.createElement("button");
-    b.className = "small secondary";
-    b.textContent = `Fetch: ${link.text}`;
-    b.title = link.href;
-    b.onclick = async () => {
-      msg("Downloading CV…");
-      try {
-        pendingCv = await fetchCv(link.href, tab.id, baseName());
-        showCv();
-        msg("");
-      } catch (e) {
-        msg("Could not download the CV: " + e.message + ". Download it yourself and choose the file.");
-      }
+  $("selectNew").onclick = () => {
+    S.people.forEach((p, i) => {
+      const m = workingCopy(p).matches;
+      if (m && !m.length) S.checked.add(i);
+    });
+    renderList();
+  };
+  $("bulkJob").onchange = () => {
+    rememberJob($("bulkJob").value);
+    updateBulkButton();
+  };
+  $("addMany").onclick = () => {
+    const tags = splitTags($("bulkTags").value);
+    startRun([...S.checked].map((i) => ({ ...workingCopy(S.people[i]), jobId: $("bulkJob").value, tags })));
+  };
+  for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) {
+    $(f).oninput = () => {
+      S.cur[f] = $(f).value.trim();
+      renderPerson();
     };
-    $("cvLinks").appendChild(b);
   }
-  $("cvFile").onchange = async () => {
-    const file = $("cvFile").files[0];
+  $("job").onchange = () => {
+    S.cur.jobId = $("job").value;
+    rememberJob(S.cur.jobId);
+    renderPerson();
+  };
+  const addTag = () => {
+    const t = $("newTag").value.trim();
+    if (t && !hasTag(S.cur.tags, t)) S.cur.tags.push(t);
+    $("newTag").value = "";
+    renderPerson();
+  };
+  $("addTag").onclick = addTag;
+  $("newTag").onkeydown = (e) => e.key === "Enter" && addTag();
+  $("saveTags").onclick = async () => {
+    const c = S.cur;
+    $("saveTags").disabled = true;
+    $("saveTags").textContent = "Saving…";
+    try {
+      const res = await hronSetTags(c.matches[0].cvid, c.matches[0].appid, c.tags);
+      c.savedTags = res.tags;
+      c.tags = [...res.tags];
+      const parts = [];
+      if (res.added.length) parts.push(`Added: ${res.added.join(", ")}.`);
+      if (res.removed.length) parts.push(`Removed: ${res.removed.join(", ")}.`);
+      if (res.failed.length) parts.push(`HR-ON did not accept: ${res.failed.join(", ")}.`);
+      msg(parts.join(" ") || "No changes.");
+    } catch (e) {
+      msg(`Could not save tags: ${e.message}`);
+    }
+    renderPerson();
+  };
+  // CV: click to choose a file, or drop one
+  const takeFile = async (file) => {
     if (!file) return;
     try {
-      pendingCv = await fileToCv(file);
-      showCv();
+      await setCv(S.cur, await fileToCv(file));
     } catch (e) {
       msg(e.message);
     }
   };
-
-  $("add").onclick = addToQueue;
-  $("addAndOpen").onclick = async () => {
-    // Already in HR-ON: open their newest application instead of adding them again.
-    if (currentMatches.length) return openInHrOn(cvUrl(currentMatches[0]));
-    if (!(await addToQueue())) return;
-    // Go straight to the job's applicant list if we know it.
-    const { hronUrl } = await getSettings();
-    const jobUrl = (await getJobUrls())[$("job").value.trim()];
-    await openInHrOn(jobUrl, hronUrl);
+  $("drop").onclick = () => $("cvFile").click();
+  $("cvFile").onchange = () => takeFile($("cvFile").files[0]);
+  $("drop").ondragover = (e) => {
+    e.preventDefault();
+    $("drop").classList.add("over");
+  };
+  $("drop").ondragleave = () => $("drop").classList.remove("over");
+  $("drop").ondrop = (e) => {
+    e.preventDefault();
+    $("drop").classList.remove("over");
+    takeFile(e.dataTransfer.files[0]);
+  };
+  $("primary").onclick = () => {
+    const c = S.cur;
+    if (c.matches && c.matches.length) return openInHrOn(cvUrl(c.matches[0]));
+    startRun([c]);
   };
 }
 
+// Opens a URL in the HR-ON tab if there is one, else in a new tab.
+async function openInHrOn(url) {
+  const [existing] = await chrome.tabs.query({ url: `${HRON}*` });
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true, url });
+    await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url });
+  }
+}
+
+// Hands the people to the run window, which keeps going when this popup closes.
+async function startRun(people) {
+  const items = people.map((c) => ({
+    firstName: c.firstName,
+    lastName: c.lastName,
+    email: c.email || S.settings.fixedEmail,
+    phone: c.phone || "",
+    headline: c.headline || "",
+    company: c.company || "",
+    location: c.location || "",
+    linkedinUrl: c.linkedinUrl || "",
+    jobId: c.jobId,
+    job: (S.jobs.find((j) => j.id === c.jobId) || {}).title || "",
+    tags: c.tags,
+    cv: c.cv,
+    inHron: !!(c.matches && c.matches.length),
+  }));
+  await chrome.storage.local.set({ run: { items, windowId: S.tab.windowId, at: Date.now() } });
+  await chrome.windows.create({ url: chrome.runtime.getURL("popup.html?view=run"), type: "popup", width: 440, height: 640 });
+  window.close();
+}
+
+// ---------- run window: add people to HR-ON one by one ----------
+
+const R = { stop: false };
+
 // Fills the Create CV form, which HR-ON may show in a frame: try every frame,
 // and if no form is open yet, click "Create CV" and wait for it.
-async function fillInHrOn(tabId, c) {
-  const settings = await getSettings();
-  const cv = await getCv(c.id);
-
+async function fillInHrOn(tabId, c, cv, settings) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ["fill.js"] });
   const [{ result: page }] = await chrome.scripting.executeScript({ target: { tabId }, func: () => scanHrOnPage() });
   if (c.job && page.currentJob) {
     const a = c.job.toLowerCase();
     const b = page.currentJob.toLowerCase();
-    if (!a.includes(b) && !b.includes(a)) {
-      return { error: `This page is for "${page.currentJob}", but the candidate is for "${c.job}". Open that job's applicant list, or change the job in the queue.` };
-    }
+    if (!a.includes(b) && !b.includes(a)) return { error: `HR-ON opened "${page.currentJob}" instead of "${c.job}".` };
   }
-
   const tryFill = async () => {
     const target = { tabId, allFrames: true };
     await chrome.scripting.executeScript({ target, world: "MAIN", files: ["fill.js"] });
@@ -504,212 +579,187 @@ async function fillInHrOn(tabId, c) {
   let result = await tryFill();
   if (result) return result;
   const [{ result: clicked }] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: () => clickCreateCv() });
-  if (!clicked) return { error: "Open the job's applicant list in HR-ON (the page with the 'Create CV' button) first." };
+  if (!clicked) return { error: "Couldn't find the 'Create CV' button on the job's applicant list." };
   for (let i = 0; i < 20 && !result; i++) {
     await sleep(400);
     result = await tryFill();
   }
-  return result || { error: "Clicked 'Create CV', but couldn't find the form. Open it yourself and click Fill form again." };
+  return result || { error: "Clicked 'Create CV', but the form didn't open." };
 }
 
-// Finds the saved candidate in their job posting (or all postings) and adds the tags.
-async function addTagsInHrOn(c, tags) {
-  let jobId = null;
-  if (c.job) {
-    const job = (await hronJobs()).find((j) => j.title.toLowerCase() === c.job.toLowerCase());
-    jobId = job ? job.id : null;
-  }
-  const { matches } = await hronFindPerson(c.firstName, c.lastName, jobId);
-  const name = `${c.firstName} ${c.lastName}`.trim();
-  if (!matches.length) {
-    return { error: `Couldn't find ${name} in ${jobId ? `"${c.job}"` : "HR-ON"}. Save the candidate in HR-ON first.` };
-  }
-  const people = [...new Set(matches.map((m) => m.cvid))];
-  if (people.length > 1) {
-    return { error: `Found ${people.length} different people called ${name}${jobId ? "" : ". Set the job in the queue and try again"}.` };
-  }
-  return hronAddTags(matches[0].cvid, matches[0].appid, tags);
+// True if `func` returns true in any frame of the tab.
+async function anyFrame(tabId, func) {
+  await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, world: "MAIN", files: ["fill.js"] });
+  const res = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, world: "MAIN", func });
+  return res.some((r) => r.result);
 }
 
-async function renderQueue(hronTab) {
-  $("queueSection").classList.remove("hidden");
-  const queue = await getQueue();
-  const box = $("queue");
-  box.innerHTML = "";
-  if (!queue.length) {
-    box.textContent = "The queue is empty. Add candidates from LinkedIn Recruiter.";
+async function waitForTab(tabId) {
+  await sleep(300); // right after a navigation the tab can still report the old page as complete
+  for (let i = 0; i < 60; i++) {
+    const t = await chrome.tabs.get(tabId);
+    if (t.status === "complete") break;
+    await sleep(250);
+  }
+  await sleep(700); // let HR-ON's scripts set up the page
+}
+
+// The HR-ON tab to work in: an open one, else a new background tab.
+async function hronTab(windowId, url) {
+  const [existing] = await chrome.tabs.query({ url: `${HRON}*` });
+  if (existing) {
+    await chrome.tabs.update(existing.id, { url });
+    return existing.id;
+  }
+  const created = await chrome.tabs.create({ url, active: false, ...(windowId ? { windowId } : {}) });
+  return created.id;
+}
+
+// Adds one person. Calls step(text) as it goes; returns { done, skip, error, warn, match }.
+async function addOne(item, windowId, settings, step) {
+  if (item.inHron) return { skip: "Already in HR-ON" };
+  const index = await getIndex();
+  if (matchesIn(index, item).length) return { skip: "Already in HR-ON" };
+
+  step("Opening the job in HR-ON…");
+  const tabId = await hronTab(windowId, `${HRON}applications/company/?jobpostid=${item.jobId}`);
+  await waitForTab(tabId);
+
+  step("Filling Create CV…");
+  const filled = await fillInHrOn(tabId, item, item.cv, settings);
+  if (filled.error) return { error: filled.error };
+  if (!filled.filled.some((f) => /name/i.test(f)) || !filled.filled.includes("email")) {
+    return { error: `Couldn't fill HR-ON's required fields (filled: ${filled.filled.join(", ") || "nothing"}).` };
+  }
+
+  step("Saving…");
+  await sleep(500);
+  const [{ result: clickedTop }] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: () => hronClickSave() });
+  if (!clickedTop && !(await anyFrame(tabId, () => hronClickSave()))) {
+    return { error: "Couldn't find the Save button. The form is filled in HR-ON — click Save there." };
+  }
+  let open = true;
+  for (let i = 0; i < 30 && open; i++) {
+    await sleep(500);
+    open = await anyFrame(tabId, () => hronHasCreateCvForm()).catch(() => false);
+  }
+  if (open) return { error: "HR-ON didn't save. Check the form in HR-ON (a required field?)." };
+
+  step("Adding tags…");
+  const term = nameTokens(item.lastName).at(-1) || nameTokens(fullName(item)).at(-1);
+  let match = null;
+  for (let i = 0; i < 5 && !match; i++) {
+    const rows = (await hronApplicants(item.jobId, term)).filter((r) => sameName(r.name, fullName(item)));
+    match = rows.sort((a, b) => Number(b.appid) - Number(a.appid))[0] || null;
+    if (!match) await sleep(1500);
+  }
+  if (!match) return { done: true, warn: "Saved, but couldn't find them in the job to add tags." };
+  if (item.tags.length) {
+    const res = await hronAddTags(match.cvid, match.appid, item.tags);
+    if (res.failed.length) return { done: true, match, warn: `Saved. HR-ON did not accept tags: ${res.failed.join(", ")}` };
+  }
+  return { done: true, match };
+}
+
+async function runMain() {
+  document.body.classList.add("window");
+  show("runScreen");
+  const { run } = await chrome.storage.local.get("run");
+  if (!run || !run.items.length) {
+    $("runTitle").textContent = "Nothing to add";
+    $("runSub").textContent = "";
+    $("runButton").textContent = "Close";
+    $("runButton").onclick = () => window.close();
     return;
   }
-  const jobs = await getKnownJobs();
-  queue.forEach((c) => {
-    const row = document.createElement("div");
-    row.className = "item";
-    const name = document.createElement("div");
-    name.className = "name";
-    name.textContent = `${c.firstName} ${c.lastName}`.trim() + (c.company ? ` (${c.company})` : "");
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = `CV: ${c.cvName || "none"} · Mobile: ${c.phone || "none"}` + (c.tagged ? " · Tags added ✓" : "");
-
-    // Job and tags can be adjusted here, e.g. once the HR-ON job list is known.
-    const job = document.createElement("input");
-    job.value = c.job || "";
-    job.placeholder = "Job";
-    job.setAttribute("list", "queueJobs");
-    const tags = document.createElement("input");
-    tags.value = c.tags || "";
-    tags.placeholder = "Tags (comma-separated)";
-    const save = async () => {
-      const q = await getQueue();
-      const it = q.find((x) => x.id === c.id);
-      if (!it) return;
-      it.job = c.job = job.value.trim();
-      it.tags = c.tags = tags.value.trim();
-      await setQueue(q);
-    };
-    job.onchange = save;
-    tags.onchange = save;
-
-    const file = document.createElement("input");
-    file.type = "file";
-    file.accept = ".pdf,.doc,.docx,.rtf,.txt,.odt";
-    file.onchange = async () => {
-      if (!file.files[0]) return;
-      try {
-        const cv = await fileToCv(file.files[0]);
-        await setCv(c.id, cv);
-        const phone = c.phone ? "" : await phoneFromCv(cv);
-        const q = await getQueue();
-        const it = q.find((x) => x.id === c.id);
-        if (it) {
-          it.cvName = c.cvName = cv.name;
-          if (phone) it.phone = c.phone = phone;
-        }
-        await setQueue(q);
-        meta.textContent = `CV: ${cv.name}` + (phone ? ` · mobile from CV: ${phone}` : "");
-      } catch (e) {
-        msg(e.message);
-      }
-    };
-
-    const buttons = document.createElement("div");
-    if (hronTab) {
-      const fill = document.createElement("button");
-      fill.className = "small";
-      fill.textContent = "Fill form";
-      fill.onclick = async () => {
-        await save();
-        try {
-          const result = await fillInHrOn(hronTab.id, c);
-          if (result.error) return msg(result.error);
-          msg(
-            result.filled.length
-              ? `Filled: ${result.filled.join(", ")}.` +
-                  (result.missing.length ? ` Not found: ${result.missing.join(", ")}.` : "") +
-                  " Click Save in HR-ON, then Add tags."
-              : "No fields found in the Create CV form."
-          );
-        } catch (e) {
-          msg("Could not fill the form: " + e.message);
-        }
-      };
-      buttons.appendChild(fill);
-    }
-    // Step 2, after saving in HR-ON: find the candidate in the job and add the tags.
-    const tagBtn = document.createElement("button");
-    tagBtn.className = "small";
-    tagBtn.textContent = "Add tags";
-    tagBtn.onclick = async () => {
-      await save();
-      const list = (c.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
-      if (!list.length) return msg("No tags to add.");
-      msg("Finding the candidate in HR-ON…");
-      try {
-        const res = await addTagsInHrOn(c, list);
-        if (res.error) return msg(res.error);
-        const parts = [];
-        if (res.added.length) parts.push(`Added: ${res.added.join(", ")}.`);
-        if (res.skipped.length) parts.push(`Already there: ${res.skipped.join(", ")}.`);
-        if (res.failed.length) parts.push(`HR-ON did not accept: ${res.failed.join(", ")}.`);
-        msg(parts.join(" ") + " Reopen the candidate in HR-ON to see them.");
-        if (!res.failed.length) {
-          const q = await getQueue();
-          const it = q.find((x) => x.id === c.id);
-          if (it) it.tagged = c.tagged = true;
-          await setQueue(q);
-          meta.textContent += " · Tags added ✓";
-        }
-      } catch (e) {
-        msg("Could not add tags: " + e.message);
-      }
-    };
-    buttons.appendChild(tagBtn);
-    if (c.cvName) {
-      // For uploading by hand if the CV didn't attach.
-      const dl = document.createElement("button");
-      dl.className = "small secondary";
-      dl.textContent = "Download CV";
-      dl.onclick = async () => {
-        const cv = await getCv(c.id);
-        if (!cv) return msg("CV not found.");
-        const url = URL.createObjectURL(new Blob([base64ToBytes(cv.data)], { type: cv.type }));
-        Object.assign(document.createElement("a"), { href: url, download: cv.name }).click();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-      };
-      buttons.appendChild(dl);
-    }
-    const del = document.createElement("button");
-    del.className = "small secondary";
-    del.textContent = "Remove";
-    del.onclick = async () => {
-      await setQueue((await getQueue()).filter((x) => x.id !== c.id));
-      await chrome.storage.local.remove(`cv:${c.id}`);
-      renderQueue(hronTab);
-    };
-    buttons.appendChild(del);
-
-    row.append(name, meta, job, tags, file, buttons);
-    box.appendChild(row);
+  await chrome.storage.local.remove("run");
+  const settings = await getSettings();
+  const items = run.items;
+  const rows = items.map((it, k) => {
+    const dot = el("span", { className: "dot", textContent: String(k + 1) });
+    const text = el("span", { className: "text", textContent: "Waiting" });
+    const link = el("a", { href: "#", target: "_blank", textContent: "Open CV", className: "hidden" });
+    link.style.cssText = "font-size:12px;white-space:nowrap";
+    const who = el("span", {}, el("b", { textContent: fullName(it) }), text);
+    who.style.cssText = "flex:1;min-width:0";
+    $("steps").append(el("div", { className: "step" }, dot, who, link));
+    return { dot, text, link };
   });
-  const dl = document.createElement("datalist");
-  dl.id = "queueJobs";
-  for (const j of jobs) dl.appendChild(Object.assign(document.createElement("option"), { value: j }));
-  box.appendChild(dl);
+  $("runButton").onclick = () => {
+    R.stop = true;
+    $("runButton").disabled = true;
+    $("runButton").textContent = "Stopping after this person…";
+  };
+
+  let added = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (let k = 0; k < items.length && !R.stop; k++) {
+    const r = rows[k];
+    r.dot.className = "dot busy";
+    r.dot.textContent = "…";
+    $("runTitle").textContent = `Adding to HR-ON… ${k + 1} of ${items.length}`;
+    let res;
+    try {
+      res = await addOne(items[k], run.windowId, settings, (t) => (r.text.textContent = t));
+    } catch (e) {
+      res = { error: e.message };
+    }
+    if (res.skip) {
+      skipped++;
+      r.dot.className = "dot skip";
+      r.dot.textContent = "–";
+      r.text.textContent = `Skipped — ${res.skip[0].toLowerCase()}${res.skip.slice(1)}`;
+    } else if (res.error) {
+      failed++;
+      r.dot.className = "dot fail";
+      r.dot.textContent = "!";
+      r.text.textContent = res.error;
+      r.text.classList.add("fail-text");
+    } else {
+      added++;
+      r.dot.className = "dot done";
+      r.dot.textContent = "✓";
+      r.text.textContent = res.warn || `Added · tags: ${items[k].tags.join(", ") || "none"}`;
+      if (res.match) {
+        r.link.href = cvUrl(res.match);
+        r.link.classList.remove("hidden");
+      }
+    }
+    $("bar").firstElementChild.style.width = `${Math.round(((k + 1) / items.length) * 100)}%`;
+  }
+  // The HR-ON check must see the new people next time.
+  await chrome.storage.local.remove("hronIndex");
+  $("bar").classList.add("done");
+  $("runTitle").textContent = items.length > 1 ? `Done: ${added} added to HR-ON` : added ? "Added to HR-ON" : "Not added";
+  const notes = [];
+  if (skipped) notes.push(`${skipped} skipped (already in HR-ON)`);
+  if (failed) notes.push(`${failed} not added — see below`);
+  const left = items.length - added - skipped - failed;
+  if (left) notes.push(`stopped before ${left} more`);
+  $("runSub").textContent = notes.join(" · ") || "Job, e-mail, mobile, LinkedIn link, CV and tags are saved.";
+  $("runButton").disabled = false;
+  $("runButton").textContent = "Close";
+  $("runButton").onclick = () => window.close();
 }
+
+// ---------- start ----------
 
 (async () => {
   $("version").textContent = `v${chrome.runtime.getManifest().version}`;
-  if (new URLSearchParams(location.search).get("view") === "queue") {
-    // Full-tab view: safe for file pickers, which can close the popup on some systems.
-    document.body.classList.add("page");
-    await renderQueue(null);
-    return;
-  }
-  const tab = await activeTab();
-  const url = tab?.url || "";
-  if (/^https:\/\/www\.linkedin\.com\/(talent|in)\//.test(url)) {
-    await initLinkedIn(tab);
-  } else if (/^https:\/\/recruit\.hr-on\.com\//.test(url)) {
-    $("hron").classList.remove("hidden");
+  $("openSettings").onclick = () => chrome.runtime.openOptionsPage();
+  if (new URLSearchParams(location.search).get("view") === "run") return runMain();
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (/^https:\/\/www\.linkedin\.com\/(talent|in)\//.test(tab?.url || "")) {
+    wireLinkedInControls();
     try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fill.js"] });
-      const [{ result: info }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => scanHrOnPage() });
-      const known = new Set(await getKnownJobs());
-      info.jobs.forEach((j) => known.add(j));
-      if (info.currentJob) {
-        known.add(info.currentJob);
-        const jobUrls = await getJobUrls();
-        jobUrls[info.currentJob] = info.url;
-        await chrome.storage.local.set({ jobUrls });
-        $("currentJob").textContent = `Current job: ${info.currentJob}`;
-      }
-      await chrome.storage.local.set({ knownJobs: [...known] });
-    } catch {
-      /* page not scriptable yet; ignore */
+      await initLinkedIn(tab);
+    } catch (e) {
+      show("other");
+      $("other").firstElementChild.textContent = `Could not read the LinkedIn page: ${e.message}`;
     }
-    await renderQueue(tab);
   } else {
-    $("other").classList.remove("hidden");
-    await renderQueue(null);
+    show("other");
+    getIndex();
   }
 })();
