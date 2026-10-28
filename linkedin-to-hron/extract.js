@@ -7,7 +7,8 @@ var LI_NAME = "[data-test-row-lockup-full-name], [data-live-test-row-lockup-full
 
 function liText(el) {
   // Also drops leading separators, e.g. "· Copenhagen, Denmark".
-  return el ? el.textContent.replace(/\s+/g, " ").trim().replace(/^[·•|–-]\s*/, "") : "";
+  const t = el ? el.textContent.replace(/\s+/g, " ").trim().replace(/^[·•|–-]\s*/, "") : "";
+  return /^[-–—·|\s]*$/.test(t) ? "" : t; // "--" means empty on LinkedIn
 }
 
 function liFirst(root, selectors) {

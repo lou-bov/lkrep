@@ -224,3 +224,22 @@ async function hronTagList(index) {
   await chrome.storage.local.set({ hronTagList: { at: Date.now(), tags } });
   return tags;
 }
+
+// Re-checks a person's applications live in HR-ON (the index can be up to 30
+// minutes old). Returns the ones that still exist, with their current status,
+// and drops the rest from the stored index.
+async function hronVerify(matches, firstName, lastName) {
+  const full = `${firstName} ${lastName}`.trim();
+  const term = nameTokens(lastName).at(-1) || nameTokens(full).at(-1);
+  const live = new Map();
+  for (const jobId of new Set(matches.map((m) => m.jobId))) {
+    for (const r of await hronApplicants(jobId, term)) if (sameName(r.name, full)) live.set(r.appid, r);
+  }
+  const kept = matches.filter((m) => live.has(m.appid)).map((m) => ({ ...m, ...live.get(m.appid) }));
+  if (kept.length !== matches.length) {
+    const gone = new Set(matches.filter((m) => !live.has(m.appid)).map((m) => m.appid));
+    const { hronIndex: cache } = await chrome.storage.local.get("hronIndex");
+    if (cache) await chrome.storage.local.set({ hronIndex: { ...cache, rows: cache.rows.filter((r) => !gone.has(r.appid)) } });
+  }
+  return kept;
+}

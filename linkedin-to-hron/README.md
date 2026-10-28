@@ -64,7 +64,10 @@ Picture, Language, Postal code, Phone and Attach application are left empty.
 
 ## How the HR-ON check works
 The extension uses the same requests as HR-ON's own pages, with your login. It reads the applicant
-list of every job posting once and keeps it for 30 minutes (**Check again** reloads it). People match
+list of every job posting once and keeps it for 30 minutes (**Check again** reloads it), so a whole
+page of people is checked at once. When you open a person, and right before adding someone, the
+extension checks them again live in HR-ON, so someone deleted from HR-ON shows as **New** at once.
+**Open CV** opens the job's applicant list in HR-ON and opens the candidate there. People match
 when first and last name match. Tags are read from and saved with the same requests as the Tags field
 on a candidate in HR-ON.
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Recruiter → HR-ON",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Create candidates from LinkedIn Recruiter in HR-ON Recruit, with tags, job and CV.",
   "permissions": [
     "storage",
@@ -30,5 +30,8 @@
       ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
 }

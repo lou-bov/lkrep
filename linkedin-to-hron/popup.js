@@ -18,7 +18,6 @@ const initials = (p) => ((p.firstName || " ")[0] + (p.lastName || " ")[0]).trim(
 const personKey = (p) => p.linkedinUrl || fullName(p);
 const splitTags = (s) => (s || "").split(",").map((t) => t.trim()).filter(Boolean);
 const hasTag = (list, t) => list.some((x) => x.toLowerCase() === t.toLowerCase());
-const cvUrl = (m) => `${HRON}view-cv/${m.cvid}/${m.appid}/#applications`;
 
 const getSettings = () =>
   chrome.storage.sync.get({ hronUrl: DEFAULT_HRON_URL, defaultTags: "Linkedin", fixedEmail: "xyz@f5.dk", selectors: {} });
@@ -90,15 +89,27 @@ async function phoneFromCv(cv) {
 // ---------- HR-ON data shared by the views ----------
 
 let indexPromise = null;
+let hronInfoText = "";
+const setInfo = (t) => ($("hronInfo").textContent = hronInfoText = t);
 function getIndex(force = false) {
   if (force || !indexPromise) {
     indexPromise = hronIndex(force);
     indexPromise
-      .then((ix) => ($("hronInfo").textContent = `HR-ON: ${ix.jobs} jobs · ${ix.rows.length} applications`))
-      .catch((e) => ($("hronInfo").textContent = /logged in/i.test(e.message) ? "HR-ON: not logged in" : "HR-ON: not reachable"));
+      .then((ix) => setInfo(`HR-ON: ${ix.jobs} jobs · ${ix.rows.length} applications`))
+      .catch((e) => setInfo(/logged in/i.test(e.message) ? "HR-ON: not logged in" : "HR-ON: not reachable"));
   }
   return indexPromise;
 }
+// Opens the candidate in HR-ON (done by the background script; see background.js).
+const openCandidate = (m) => chrome.runtime.sendMessage({ type: "openCandidate", match: { cvid: m.cvid, appid: m.appid, jobId: m.jobId } });
+const cvLink = (m) => {
+  const a = el("a", { href: "#", textContent: "Open CV" });
+  a.onclick = (ev) => {
+    ev.preventDefault();
+    openCandidate(m);
+  };
+  return a;
+};
 // The person's HR-ON applications, newest first.
 const matchesIn = (index, p) => hronMatches(index, p.firstName, p.lastName).sort((a, b) => Number(b.appid) - Number(a.appid));
 
@@ -235,7 +246,8 @@ async function markPeople() {
   if (onScreen("listScreen")) renderList();
   if (S.cur && onScreen("personScreen")) {
     renderPerson();
-    loadSavedTags(S.cur);
+    const c = S.cur;
+    verifyPerson(c).then(() => loadSavedTags(c));
   }
 }
 
@@ -249,9 +261,22 @@ function openPerson(i) {
   $("details").open = false;
   msg("");
   renderPerson();
-  loadSavedTags(S.cur);
+  const c = S.cur;
+  verifyPerson(c).then(() => loadSavedTags(c));
   // Next time the popup opens, start on this person.
   chrome.storage.local.set({ liLastClicked: { person: S.people[i], at: Date.now() } });
+}
+
+// The index can be up to 30 minutes old: confirm the person's applications live in HR-ON.
+async function verifyPerson(c) {
+  if (c.verified || !c.matches || !c.matches.length) return;
+  try {
+    c.matches = await hronVerify(c.matches, c.firstName, c.lastName);
+  } catch {
+    /* keep what the index says */
+  }
+  c.verified = true;
+  if (S.cur === c) renderPerson();
 }
 
 // For someone already in HR-ON: their current tags go into the tag picker.
@@ -269,7 +294,9 @@ async function loadSavedTags(c) {
 
 function renderPerson() {
   const c = S.cur;
-  const inHron = !!(c.matches && c.matches.length);
+  // Still checking: no index yet, or the index says "in HR-ON" and the live check isn't back.
+  const pending = !c.error && (c.matches == null || (c.matches.length > 0 && !c.verified));
+  const inHron = !pending && !!(c.matches && c.matches.length);
   $("pAvatar").className = `avatar big ${inHron ? "in" : ""}`;
   $("pAvatar").textContent = initials(c);
   $("pName").textContent = fullName(c) || "—";
@@ -286,7 +313,7 @@ function renderPerson() {
   if (c.error) {
     st.className = "status";
     st.append(`Could not check HR-ON: ${c.error}`);
-  } else if (c.matches == null) {
+  } else if (pending) {
     st.className = "status";
     st.append("Checking HR-ON… (the first check takes a few seconds)");
   } else if (!inHron) {
@@ -314,17 +341,17 @@ function renderPerson() {
           "div",
           { className: "app" },
           el("span", { textContent: `${m.job} — ${m.status || "?"}, ${m.date}` }),
-          el("a", { href: cvUrl(m), target: "_blank", textContent: "Open CV" })
+          cvLink(m)
         )
       );
       if (kind) st.lastChild.firstChild.prepend(stageIcon(kind, m), " ");
     }
   }
-  if (c.matches != null || c.error) {
+  if (!pending || c.error) {
     const again = el("a", { href: "#", className: "again", textContent: "Check again" });
     again.onclick = (ev) => {
       ev.preventDefault();
-      for (const p of S.edited.values()) Object.assign(p, { matches: null, savedTags: null, error: "", editingTags: false, tagNote: "" });
+      for (const p of S.edited.values()) Object.assign(p, { matches: null, verified: false, savedTags: null, error: "", editingTags: false, tagNote: "" });
       renderPerson();
       getIndex(true);
       markPeople();
@@ -402,8 +429,8 @@ function renderPerson() {
     primary.disabled = false;
     primary.textContent = "Open CV in HR-ON";
   } else {
-    primary.disabled = c.matches == null || !c.jobId || !fullName(c);
-    primary.textContent = c.matches == null ? "Checking HR-ON…" : !c.jobId ? "Choose a job posting first" : "Add to HR-ON";
+    primary.disabled = pending || !c.jobId || !fullName(c);
+    primary.textContent = pending ? "Checking HR-ON…" : !c.jobId ? "Choose a job posting first" : "Add to HR-ON";
   }
 }
 
@@ -447,6 +474,7 @@ async function initLinkedIn(tab) {
     $("hronInfo").textContent = "Loading everyone on the page…";
     await run((n) => liLoadAll(n), [Math.min(page.total || 50, 50)]);
     page = await run(() => extractLinkedInList());
+    $("hronInfo").textContent = hronInfoText;
   }
   // An open profile has extra details: mobile, CV links, public profile link.
   const open = await run(() => extractLinkedInProfile());
@@ -564,20 +592,9 @@ function wireLinkedInControls() {
   };
   $("primary").onclick = () => {
     const c = S.cur;
-    if (c.matches && c.matches.length) return openInHrOn(cvUrl(c.matches[0]));
+    if (c.matches && c.matches.length) return openCandidate(c.matches[0]);
     startRun([c]);
   };
-}
-
-// Opens a URL in the HR-ON tab if there is one, else in a new tab.
-async function openInHrOn(url) {
-  const [existing] = await chrome.tabs.query({ url: `${HRON}*` });
-  if (existing) {
-    await chrome.tabs.update(existing.id, { active: true, url });
-    await chrome.windows.update(existing.windowId, { focused: true });
-  } else {
-    await chrome.tabs.create({ url });
-  }
 }
 
 // Hands the people to the run window, which keeps going when this popup closes.
@@ -595,7 +612,6 @@ async function startRun(people) {
     job: (S.jobs.find((j) => j.id === c.jobId) || {}).title || "",
     tags: c.tags,
     cv: c.cv,
-    inHron: !!(c.matches && c.matches.length),
   }));
   await chrome.storage.local.set({ run: { items, windowId: S.tab.windowId, at: Date.now() } });
   await chrome.windows.create({ url: chrome.runtime.getURL("popup.html?view=run"), type: "popup", width: 440, height: 640 });
@@ -668,9 +684,9 @@ async function hronTab(windowId, url) {
 
 // Adds one person. Calls step(text) as it goes; returns { done, skip, error, warn, match }.
 async function addOne(item, windowId, settings, step) {
-  if (item.inHron) return { skip: "Already in HR-ON" };
   const index = await getIndex();
-  if (matchesIn(index, item).length) return { skip: "Already in HR-ON" };
+  const known = matchesIn(index, item);
+  if (known.length && (await hronVerify(known, item.firstName, item.lastName)).length) return { skip: "Already in HR-ON" };
 
   step("Opening the job in HR-ON…");
   const tabId = await hronTab(windowId, `${HRON}applications/company/?jobpostid=${item.jobId}`);
@@ -702,6 +718,7 @@ async function addOne(item, windowId, settings, step) {
   for (let i = 0; i < 5 && !match; i++) {
     const rows = (await hronApplicants(item.jobId, term)).filter((r) => sameName(r.name, fullName(item)));
     match = rows.sort((a, b) => Number(b.appid) - Number(a.appid))[0] || null;
+    if (match) match = { ...match, jobId: item.jobId };
     if (!match) await sleep(1500);
   }
   if (!match) return { done: true, warn: "Saved, but couldn't find them in the job to add tags." };
@@ -773,7 +790,10 @@ async function runMain() {
       r.dot.textContent = "✓";
       r.text.textContent = res.warn || `Added · tags: ${items[k].tags.join(", ") || "none"}`;
       if (res.match) {
-        r.link.href = cvUrl(res.match);
+        r.link.onclick = (ev) => {
+          ev.preventDefault();
+          openCandidate(res.match);
+        };
         r.link.classList.remove("hidden");
       }
     }
