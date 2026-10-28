@@ -211,18 +211,33 @@ function hronMatches(index, firstName, lastName) {
   return fullName ? index.rows.filter((r) => sameName(r.name, fullName)) : [];
 }
 
-// All tags used in HR-ON (the list HR-ON suggests in a candidate's Tags field).
-// Read from any candidate page; cached for an hour.
-async function hronTagList(index) {
-  const { hronTagList: cache } = await chrome.storage.local.get("hronTagList");
-  if (cache && Date.now() - cache.at < JOBS_TTL_MS) return cache.tags;
+// HR-ON's tag list (what a candidate's Tags field suggests) and status list
+// (Received, Sourcing, Screening, …), read from any candidate page; cached for an hour.
+// Returns { tags: [names], statuses: [{ id, text }] in HR-ON's order }.
+async function hronCandidateLists(index) {
+  const { hronLists: cache } = await chrome.storage.local.get("hronLists");
+  if (cache && Date.now() - cache.at < JOBS_TTL_MS) return cache;
   const any = index.rows[0];
-  if (!any) return [];
+  if (!any) return { tags: [], statuses: [] };
   const html = await hronRequest(`view-cv/${any.cvid}/${any.appid}/?iframe`);
-  const m = html.match(/var tagSuggestions\s*=\s*(\[.*?\]);/s);
-  const tags = m ? JSON.parse(m[1]) : [];
-  await chrome.storage.local.set({ hronTagList: { at: Date.now(), tags } });
-  return tags;
+  const t = html.match(/var tagSuggestions\s*=\s*(\[.*?\]);/s);
+  const st = html.match(/var statusEnumInfo\s*=\s*(\{.*?\});/s);
+  const statuses = st
+    ? Object.values(JSON.parse(st[1]))
+        .filter((x) => x.active !== "0")
+        .sort((x, y) => Number(x.priority) - Number(y.priority))
+        .map((x) => ({ id: String(x.statusid), text: x.text }))
+    : [];
+  const lists = { at: Date.now(), tags: t ? JSON.parse(t[1]) : [], statuses };
+  await chrome.storage.local.set({ hronLists: lists });
+  return lists;
+}
+const hronTagList = async (index) => (await hronCandidateLists(index)).tags;
+
+// Sets an application's status, with the same request as HR-ON's status dropdown.
+async function hronSetStatus(appid, statusid) {
+  const body = new URLSearchParams({ action: "setstatus", id: appid, statusid }).toString();
+  await hronRequest("manager/jobapplies.php", { method: "POST", body });
 }
 
 // Re-checks a person's applications live in HR-ON (the index can be up to 30

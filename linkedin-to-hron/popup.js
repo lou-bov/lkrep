@@ -143,7 +143,9 @@ const S = {
   cur: null, // the person on the person screen
   jobs: [],
   allTags: [],
+  statuses: [], // HR-ON's statuses: [{ id, text }]
   lastJobId: "",
+  lastStatusId: "0", // "0" = Received
 };
 
 // A person as the person screen edits them (kept while the popup is open).
@@ -155,6 +157,7 @@ function workingCopy(p) {
       email: S.settings.fixedEmail,
       tags: splitTags(S.settings.defaultTags),
       jobId: S.lastJobId,
+      statusId: S.lastStatusId,
       cv: null,
       matches: null, // null = still checking HR-ON
       savedTags: null, // their tags in HR-ON, if they're there
@@ -172,6 +175,17 @@ function fillJobSelect(select, value) {
   select.value = S.jobs.some((j) => j.id === value) ? value : "";
 }
 
+function fillStatusSelect(select, value) {
+  const list = S.statuses.length ? S.statuses : [{ id: "0", text: "Received" }];
+  select.replaceChildren(...list.map((x) => el("option", { value: x.id, textContent: x.text })));
+  select.value = list.some((x) => x.id === value) ? value : list[0].id;
+}
+
+function rememberStatus(id) {
+  S.lastStatusId = id;
+  chrome.storage.local.set({ lastStatusId: id });
+}
+
 function rememberJob(id) {
   S.lastJobId = id;
   chrome.storage.local.set({ lastJobId: id });
@@ -186,6 +200,7 @@ function renderList() {
   $("listTitle").textContent = `${n} people on this page`;
   $("listSub").textContent = S.total && S.total > n ? `${S.total} in total · go to LinkedIn's next page for more` : "";
   fillJobSelect($("bulkJob"), S.lastJobId);
+  fillStatusSelect($("bulkStatus"), $("bulkStatus").value || S.lastStatusId);
   if (!$("bulkTags").value) $("bulkTags").value = S.settings.defaultTags;
 
   const box = $("people");
@@ -359,9 +374,11 @@ function renderPerson() {
     st.append(again);
   }
 
-  // Job (new people only)
+  // Job and status (new people only)
   show("jobField", !inHron);
   fillJobSelect($("job"), c.jobId);
+  show("statusField", !inHron);
+  fillStatusSelect($("statusSel"), c.statusId);
 
   // Tags: new people pick from all tags. Someone already in HR-ON shows only their
   // own tags; "Edit tags" opens the full list with Save / Cancel.
@@ -446,7 +463,7 @@ async function setCv(c, cv) {
 async function initLinkedIn(tab) {
   S.tab = tab;
   S.settings = await getSettings();
-  S.lastJobId = (await chrome.storage.local.get({ lastJobId: "" })).lastJobId;
+  ({ lastJobId: S.lastJobId, lastStatusId: S.lastStatusId } = await chrome.storage.local.get({ lastJobId: "", lastStatusId: "0" }));
   getIndex();
   hronJobs()
     .then((jobs) => {
@@ -459,9 +476,11 @@ async function initLinkedIn(tab) {
     })
     .catch(() => {});
   getIndex()
-    .then((ix) => hronTagList(ix))
-    .then((tags) => {
-      S.allTags = tags;
+    .then((ix) => hronCandidateLists(ix))
+    .then((lists) => {
+      S.allTags = lists.tags;
+      S.statuses = lists.statuses;
+      if (onScreen("listScreen")) fillStatusSelect($("bulkStatus"), $("bulkStatus").value || S.lastStatusId);
       if (S.cur) renderPerson();
     })
     .catch(() => {});
@@ -518,9 +537,11 @@ function wireLinkedInControls() {
     rememberJob($("bulkJob").value);
     updateBulkButton();
   };
+  $("bulkStatus").onchange = () => rememberStatus($("bulkStatus").value);
   $("addMany").onclick = () => {
     const tags = splitTags($("bulkTags").value);
-    startRun([...S.checked].map((i) => ({ ...workingCopy(S.people[i]), jobId: $("bulkJob").value, tags })));
+    const statusId = $("bulkStatus").value;
+    startRun([...S.checked].map((i) => ({ ...workingCopy(S.people[i]), jobId: $("bulkJob").value, statusId, tags })));
   };
   for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) {
     $(f).oninput = () => {
@@ -528,6 +549,10 @@ function wireLinkedInControls() {
       renderPerson();
     };
   }
+  $("statusSel").onchange = () => {
+    S.cur.statusId = $("statusSel").value;
+    rememberStatus(S.cur.statusId);
+  };
   $("job").onchange = () => {
     S.cur.jobId = $("job").value;
     rememberJob(S.cur.jobId);
@@ -610,6 +635,8 @@ async function startRun(people) {
     linkedinUrl: c.linkedinUrl || "",
     jobId: c.jobId,
     job: (S.jobs.find((j) => j.id === c.jobId) || {}).title || "",
+    statusId: c.statusId || "0",
+    status: (S.statuses.find((x) => x.id === (c.statusId || "0")) || { text: "Received" }).text,
     tags: c.tags,
     cv: c.cv,
   }));
@@ -721,7 +748,16 @@ async function addOne(item, windowId, settings, step) {
     if (match) match = { ...match, jobId: item.jobId };
     if (!match) await sleep(1500);
   }
-  if (!match) return { done: true, warn: "Saved, but couldn't find them in the job to add tags." };
+  if (!match) return { done: true, warn: "Saved, but couldn't find them in the job to set the status and tags." };
+  if (item.statusId && item.statusId !== "0") {
+    step(`Setting status: ${item.status}…`);
+    await hronSetStatus(match.appid, item.statusId);
+    const now = (await hronApplicants(item.jobId, term)).find((r) => r.appid === match.appid);
+    if (!now || now.status.toLowerCase() !== item.status.toLowerCase()) {
+      return { done: true, match, warn: `Saved, but HR-ON shows status "${now ? now.status : "?"}" instead of "${item.status}".` };
+    }
+    step("Adding tags…");
+  }
   if (item.tags.length) {
     const res = await hronAddTags(match.cvid, match.appid, item.tags);
     if (res.failed.length) return { done: true, match, warn: `Saved. HR-ON did not accept tags: ${res.failed.join(", ")}` };
@@ -788,7 +824,7 @@ async function runMain() {
       added++;
       r.dot.className = "dot done";
       r.dot.textContent = "✓";
-      r.text.textContent = res.warn || `Added · tags: ${items[k].tags.join(", ") || "none"}`;
+      r.text.textContent = res.warn || `Added · ${items[k].status} · tags: ${items[k].tags.join(", ") || "none"}`;
       if (res.match) {
         r.link.onclick = (ev) => {
           ev.preventDefault();
@@ -808,7 +844,7 @@ async function runMain() {
   if (failed) notes.push(`${failed} not added — see below`);
   const left = items.length - added - skipped - failed;
   if (left) notes.push(`stopped before ${left} more`);
-  $("runSub").textContent = notes.join(" · ") || "Job, e-mail, mobile, LinkedIn link, CV and tags are saved.";
+  $("runSub").textContent = notes.join(" · ") || "Job, status, e-mail, mobile, LinkedIn link, CV and tags are saved.";
   $("runButton").disabled = false;
   $("runButton").textContent = "Close";
   $("runButton").onclick = () => window.close();

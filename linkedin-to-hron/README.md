@@ -23,20 +23,22 @@ Log in to HR-ON in a tab and keep it open.
 **One person**
 1. In LinkedIn Recruiter, click the person (in a list, or open their profile), then click the extension.
 2. The popup shows the person and whether they are in HR-ON:
-   - **New**: choose the **job posting**, pick **tags** (HR-ON's own tags, or type a new one), drop or
+   - **New**: choose the **job posting** and the **status** in HR-ON (Received, Sourcing, Screening,
+     Interview 1, …; the last one you used is remembered), pick **tags** (HR-ON's own tags, or type a new one), drop or
      choose a **CV** (or click **Fetch CV** when the profile links one). The mobile number is read from
      the CV. Name, e-mail (`xyz@f5.dk` unless you type another), mobile, title, location and LinkedIn
      link are under **Details**.
    - **Already in HR-ON**: their applications with an **Open CV** link each, and their current tags.
      Click **Edit tags** to add or remove tags, then **Save tags to HR-ON** (or **Cancel**).
 3. Click **Add to HR-ON**. A small window opens and shows the progress: it opens the job's applicant
-   list in your HR-ON tab, clicks **Create CV**, fills the form, clicks **Save**, then adds the tags.
+   list in your HR-ON tab, clicks **Create CV**, fills the form, clicks **Save**, then sets the status
+   and adds the tags.
    You can keep working on LinkedIn while it runs; keep the small window open.
 
 **Many people**
 On a list page (pipeline, project, search results) the popup lists everyone on the page (it scrolls
 the page itself to load up to 50), each marked **New** or **In HR-ON**. Tick people (or **Select all
-new**), choose the job posting and tags at the bottom, and click **Add N to HR-ON**. People already in
+new**), choose the job posting, status and tags at the bottom, and click **Add N to HR-ON**. People already in
 HR-ON are skipped. For the next page of results, go to it in LinkedIn and open the extension again.
 
 ## Icons

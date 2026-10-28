@@ -154,7 +154,8 @@
     <div id="people" class="people scroll"></div>
     <div class="footer">
       <div class="bulk-opts">
-        <select id="bulkJob" aria-label="Job posting for the people you tick"></select>
+        <select id="bulkJob" aria-label="Job posting for the people you tick" style="grid-column: span 2"></select>
+        <select id="bulkStatus" aria-label="Status in HR-ON for the people you tick"></select>
         <input id="bulkTags" type="text" aria-label="Tags for the people you tick" placeholder="Tags, comma-separated">
       </div>
       <button id="addMany" class="primary add" disabled>Tick people to add them in one go</button>
@@ -179,6 +180,11 @@
       <div id="jobField" class="field">
         <label class="label" for="job">Job posting</label>
         <select id="job"></select>
+      </div>
+
+      <div id="statusField" class="field">
+        <label class="label" for="statusSel">Status in HR-ON</label>
+        <select id="statusSel"></select>
       </div>
 
       <div class="field">
