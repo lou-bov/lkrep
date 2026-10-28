@@ -65,19 +65,51 @@ function extractLinkedInProfile() {
       "[data-field='experience_company_logo'] span[aria-hidden='true']",
     ]) || job.company;
 
-  const mailto = panel.querySelector("a[href^='mailto:']");
-  const email =
-    (mailto && mailto.getAttribute("href").replace(/^mailto:/, "").split("?")[0]) ||
-    liFirst(panel, ["[data-test-contact-email-address]"]);
+  // Contact details sit in the profile's top card, often as plain text next to an
+  // icon ("liukosiakova@gmail.com", "+45 …") rather than as mailto:/tel: links.
+  const nameEl = panel.querySelector(LI_NAME) || panel.querySelector("main h1, h1");
+  let top = nameEl;
+  for (let i = 0; nameEl && i < 8 && top.parentElement && top.parentElement !== document.body; i++) {
+    if (top.parentElement.querySelectorAll(LI_NAME).length > 1) break; // reached a list of people
+    top = top.parentElement;
+    if (/public profile|offentlig profil|add email|add phone|tilføj/i.test(top.innerText || "")) break;
+  }
+  const cards = [top, panel].filter(Boolean);
+  const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+  const findIn = (fn) => {
+    for (const root of cards) {
+      const v = fn(root);
+      if (v) return v;
+    }
+    return "";
+  };
+  const email = findIn((root) => {
+    const mailto = root.querySelector("a[href^='mailto:']");
+    if (mailto) return mailto.getAttribute("href").replace(/^mailto:/, "").split("?")[0];
+    const tagged = liFirst(root, ["[data-test-contact-email-address]"]);
+    if (tagged) return tagged;
+    const m = (root.innerText || "").match(EMAIL);
+    return m && !/@(linkedin|licdn)\./i.test(m[0]) ? m[0] : "";
+  });
+  const phone = findIn((root) => {
+    const tel = root.querySelector("a[href^='tel:']");
+    if (tel) return tel.getAttribute("href").replace(/^tel:/, "");
+    const tagged = liFirst(root, ["[data-test-contact-phone]"]);
+    if (tagged) return tagged;
+    // A text element that is only a phone number (8–15 digits), e.g. next to a phone icon.
+    const isPhone = (t) => /^\+?\d[\d\s().-]{6,20}$/.test(t) && t.replace(/\D/g, "").length >= 8 && t.replace(/\D/g, "").length <= 15;
+    const el = [...root.querySelectorAll("span, div, p, dd, li, a")].find((e) => e.children.length === 0 && isPhone((e.textContent || "").trim()));
+    return el ? el.textContent.trim() : "";
+  });
 
-  const tel = panel.querySelector("a[href^='tel:']");
-  const phone = (tel && tel.getAttribute("href").replace(/^tel:/, "")) || liFirst(panel, ["[data-test-contact-phone]"]);
-
-  // Prefer the candidate's public profile URL over the Recruiter URL.
+  // Prefer the candidate's public profile URL ("Public profile" link) over the Recruiter URL.
   let linkedinUrl = "";
-  const pub = [...panel.querySelectorAll("a[href*='linkedin.com/in/']")].find((a) => !/\/in\/me\/?$/.test(a.href));
-  if (pub) linkedinUrl = pub.href.split("?")[0];
-  else linkedinUrl = window.location.href.split("?")[0];
+  const publicLink = findIn((root) => {
+    const byText = [...root.querySelectorAll("a[href]")].find((a) => /public profile|offentlig profil/i.test(a.textContent) && /linkedin\.com\/in\//.test(a.href));
+    const any = [...root.querySelectorAll("a[href*='linkedin.com/in/']")].find((a) => !/\/in\/me\/?$/.test(a.href));
+    return (byText || any || {}).href || "";
+  });
+  linkedinUrl = publicLink ? publicLink.split("?")[0] : window.location.href.split("?")[0];
 
   // Resume/attachment links (e.g. CVs candidates sent via InMail or applied with).
   const seen = new Set();
@@ -86,6 +118,8 @@ function extractLinkedInProfile() {
       const href = a.href;
       if (!/^https?:/.test(href) || /linkedin\.com\/in\//.test(href) || seen.has(href)) return false;
       const hay = `${href} ${a.textContent} ${a.getAttribute("download") || ""} ${a.getAttribute("aria-label") || ""}`;
+      // The "Attachments (0)" tab is not a file.
+      if (/^\s*attachments?\b/i.test(a.textContent) && !/\.(pdf|docx?|rtf|odt)\b/i.test(href)) return false;
       const ok = a.hasAttribute("download") || /resume|résumé|\bcv\b|curriculum|attachment|\.pdf\b|\.docx?\b/i.test(hay);
       if (ok) seen.add(href);
       return ok;
@@ -208,6 +242,7 @@ async function liSaveProfile(id) {
     firstName: p.firstName,
     lastName: p.lastName,
     phone: p.phone,
+    email: p.email,
     publicUrl: /linkedin\.com\/in\//.test(p.linkedinUrl) ? p.linkedinUrl : "",
     cvLinks: p.cvLinks,
     at: Date.now(),

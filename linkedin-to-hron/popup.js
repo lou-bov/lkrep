@@ -155,7 +155,7 @@ function workingCopy(p) {
   if (!S.edited.has(key)) {
     S.edited.set(key, {
       ...p,
-      email: S.settings.fixedEmail,
+      email: p.email || S.settings.fixedEmail, // the person's own e-mail from LinkedIn if shown
       tags: splitTags(S.settings.defaultTags),
       jobId: S.lastJobId,
       statusId: S.lastStatusId,
@@ -256,6 +256,7 @@ async function mergeProfiles() {
     for (const target of [p, S.edited.get(personKey(p))]) {
       if (!target) continue;
       if (rec.phone && !target.phone) target.phone = rec.phone;
+      if (rec.email && (!target.email || target.email === S.settings.fixedEmail)) target.email = rec.email;
       if (rec.publicUrl) target.linkedinUrl = rec.publicUrl;
       if (rec.cvLinks && rec.cvLinks.length) target.cvLinks = rec.cvLinks;
     }
@@ -702,7 +703,7 @@ async function initLinkedIn(tab) {
     if (i < 0 && profileId) i = S.people.findIndex((p) => p.linkedinUrl.includes(profileId));
     const target = S.people[i];
     if (target && same(target, open)) {
-      Object.assign(target, { phone: open.phone || target.phone, cvLinks: open.cvLinks });
+      Object.assign(target, { phone: open.phone || target.phone, email: open.email || target.email, cvLinks: open.cvLinks });
       if (/linkedin\.com\/in\//.test(open.linkedinUrl)) target.linkedinUrl = open.linkedinUrl;
     }
     if (i >= 0) openPerson(i);

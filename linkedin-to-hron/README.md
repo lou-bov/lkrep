@@ -26,7 +26,7 @@ Log in to HR-ON in a tab and keep it open.
    - **New**: choose the **job posting** and the **status** in HR-ON (Received, Sourcing, Screening,
      Interview 1, …; the last one you used is remembered), pick **tags** (HR-ON's own tags, or type a new one), drop or
      choose a **CV** (or click **Fetch CV** when the profile links one). The mobile number is read from
-     the CV. Name, e-mail (`xyz@f5.dk` unless you type another), mobile, title, location and LinkedIn
+     the CV. Name, e-mail (the person's own e-mail when LinkedIn shows one, otherwise `xyz@f5.dk`), mobile, title, location and LinkedIn
      link are under **Details**.
    - **Already in HR-ON**: their applications, each with its **status** as a dropdown (change it and
      it is saved in HR-ON straight away) and an **Open CV** link, and their current tags.
@@ -68,8 +68,8 @@ has a legend, and hovering an icon shows the job and stage.
 | Name | First and last name |
 | Address | LinkedIn profile link |
 | City / Country | From the LinkedIn location |
-| E-mail | `xyz@f5.dk` (Settings), unless you typed another address |
-| Mobile | From the CV, or LinkedIn contact info |
+| E-mail | The e-mail on the LinkedIn profile if there is one, else `xyz@f5.dk` (Settings); or what you type |
+| Mobile | The phone on the LinkedIn profile, or from the CV |
 | Attach CV | The CV file |
 | Tags (after saving) | The chosen tags |
 
