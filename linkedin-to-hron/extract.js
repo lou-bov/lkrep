@@ -1,69 +1,84 @@
-// Injected into the active LinkedIn tab via chrome.scripting.executeScript.
-// Must be self-contained: it is serialized and run in the page.
+// Injected into the LinkedIn tab as a file (chrome.scripting.executeScript with
+// files: ["extract.js"]); the popup then calls these functions in the page.
 // LinkedIn changes its markup often, so every field tries several selectors.
-function extractLinkedInProfile() {
-  const text = (el) => (el ? el.textContent.replace(/\s+/g, " ").trim() : "");
-  const first = (selectors) => {
-    for (const s of selectors) {
-      const v = text(document.querySelector(s));
-      if (v) return v;
-    }
-    return "";
+
+const LI_NAME = "[data-test-row-lockup-full-name], [data-live-test-row-lockup-full-name]";
+
+function liText(el) {
+  return el ? el.textContent.replace(/\s+/g, " ").trim() : "";
+}
+
+function liFirst(root, selectors) {
+  for (const s of selectors) {
+    const v = liText(root.querySelector(s));
+    if (v) return v;
+  }
+  return "";
+}
+
+function liSplitName(fullName) {
+  const parts = fullName.split(" ").filter(Boolean);
+  return {
+    firstName: parts.slice(0, -1).join(" ") || parts[0] || "",
+    lastName: parts.length > 1 ? parts[parts.length - 1] : "",
   };
+}
 
-  const fullName = first([
-    "[data-test-row-lockup-full-name]",
-    "[data-live-test-row-lockup-full-name]",
-    ".artdeco-entity-lockup__title",
-    "main h1",
-    "h1",
-  ]);
+// Current title and company from the "Experience" lines, e.g.
+// "Erhvervsjurist at LB Forsikring · 2026 – Present", or from a headline "Title @ Company".
+function liCurrentJob(lines, headline) {
+  const AT = /^(.+?)\s+(?:at|hos|@|på)\s+(.+?)(?:\s+·\s+.*)?$/i;
+  const start = lines.findIndex((l) => /^(experience|erfaring)$/i.test(l));
+  const exp = (start >= 0 ? lines.slice(start + 1, start + 8) : []).filter((l) => !/similar skills|lignende/i.test(l));
+  const current = exp.find((l) => AT.test(l) && /present|nu\b|nuværende|today/i.test(l)) || exp.find((l) => AT.test(l));
+  const m = (current && current.match(AT)) || (headline && headline.match(/^(.+?)\s+(?:@|at|hos)\s+(.+)$/i));
+  return m ? { title: m[1].trim(), company: m[2].trim() } : { title: "", company: "" };
+}
 
-  const headline = first([
+// The person shown in a profile view (or the first person on the page).
+function extractLinkedInProfile() {
+  // A Recruiter profile opens over the list; prefer the profile panel if there is one.
+  const panel =
+    document.querySelector("[data-test-profile-container], .profile__internal-container, [class*='profile-container']") || document;
+  const fullName = liFirst(panel, [LI_NAME, ".artdeco-entity-lockup__title", "main h1", "h1"]);
+  const headline = liFirst(panel, [
     "[data-test-row-lockup-headline]",
     "[data-live-test-row-lockup-headline]",
     ".artdeco-entity-lockup__subtitle",
     ".text-body-medium.break-words",
   ]);
-
-  const place = first([
+  const place = liFirst(panel, [
     "[data-test-row-lockup-location]",
     "[data-live-test-row-lockup-location]",
     ".artdeco-entity-lockup__caption",
     ".text-body-small.inline.t-black--light.break-words",
   ]);
+  const job = liCurrentJob((panel.innerText || document.body.innerText).split("\n").map((l) => l.trim()).filter(Boolean), headline);
+  const company =
+    liFirst(panel, [
+      "[data-test-current-position] [data-test-position-entity-company-name]",
+      "[data-test-position-entity-company-name]",
+      "[data-test-current-employer]",
+      "[data-field='experience_company_logo'] span[aria-hidden='true']",
+    ]) || job.company;
 
-  const company = first([
-    "[data-test-current-position] [data-test-position-entity-company-name]",
-    "[data-test-position-entity-company-name]",
-    "[data-test-current-employer]",
-    "[data-field='experience_company_logo'] span[aria-hidden='true']",
-  ]);
-
-  const mailto = document.querySelector("a[href^='mailto:']");
+  const mailto = panel.querySelector("a[href^='mailto:']");
   const email =
     (mailto && mailto.getAttribute("href").replace(/^mailto:/, "").split("?")[0]) ||
-    first(["[data-test-contact-email-address]"]) ||
-    "";
+    liFirst(panel, ["[data-test-contact-email-address]"]);
 
-  const tel = document.querySelector("a[href^='tel:']");
-  const phone =
-    (tel && tel.getAttribute("href").replace(/^tel:/, "")) ||
-    first(["[data-test-contact-phone]"]) ||
-    "";
+  const tel = panel.querySelector("a[href^='tel:']");
+  const phone = (tel && tel.getAttribute("href").replace(/^tel:/, "")) || liFirst(panel, ["[data-test-contact-phone]"]);
 
   // Prefer the candidate's public profile URL over the Recruiter URL.
   let linkedinUrl = "";
-  const pub = [...document.querySelectorAll("a[href*='linkedin.com/in/']")].find(
-    (a) => !/\/in\/me\/?$/.test(a.href)
-  );
+  const pub = [...panel.querySelectorAll("a[href*='linkedin.com/in/']")].find((a) => !/\/in\/me\/?$/.test(a.href));
   if (pub) linkedinUrl = pub.href.split("?")[0];
-  else if (/linkedin\.com\/in\//.test(window.location.href)) linkedinUrl = window.location.href.split("?")[0];
-  else linkedinUrl = window.location.href;
+  else linkedinUrl = window.location.href.split("?")[0];
 
   // Resume/attachment links (e.g. CVs candidates sent via InMail or applied with).
   const seen = new Set();
-  const cvLinks = [...document.querySelectorAll("a[href]")]
+  const cvLinks = [...panel.querySelectorAll("a[href]")]
     .filter((a) => {
       const href = a.href;
       if (!/^https?:/.test(href) || /linkedin\.com\/in\//.test(href) || seen.has(href)) return false;
@@ -73,22 +88,55 @@ function extractLinkedInProfile() {
       return ok;
     })
     .slice(0, 5)
-    .map((a) => ({
-      href: a.href,
-      text: (a.textContent.replace(/\s+/g, " ").trim() || a.getAttribute("aria-label") || a.href).slice(0, 60),
-    }));
+    .map((a) => ({ href: a.href, text: (liText(a) || a.getAttribute("aria-label") || a.href).slice(0, 60) }));
 
-  const parts = fullName.split(" ").filter(Boolean);
   return {
-    firstName: parts.slice(0, -1).join(" ") || parts[0] || "",
-    lastName: parts.length > 1 ? parts[parts.length - 1] : "",
-    headline,
+    ...liSplitName(fullName),
+    headline: job.title || headline,
     company,
     location: place,
-    email: email.trim(),
-    phone: phone.trim(),
+    email: (email || "").trim(),
+    phone: (phone || "").trim(),
     linkedinUrl,
     notes: "",
     cvLinks,
   };
+}
+
+// Everyone on a Recruiter list page (pipeline, project, search results).
+// Returns { people, total } where total is the "N results" count if shown.
+function extractLinkedInList() {
+  const people = [];
+  const seen = new Set();
+  for (const nameEl of document.querySelectorAll(LI_NAME)) {
+    // The card is the largest wrapper that holds only this one person.
+    let card = nameEl;
+    while (card.parentElement && card.parentElement !== document.body && card.parentElement.querySelectorAll(LI_NAME).length === 1) {
+      card = card.parentElement;
+    }
+    const fullName = liText(nameEl);
+    const link =
+      nameEl.closest("a[href]") ||
+      nameEl.querySelector("a[href]") ||
+      card.querySelector("a[href*='/talent/'][href*='profile'], a[data-test-link-to-profile-link], a[href*='linkedin.com/in/']");
+    const url = link ? link.href.split("?")[0] : "";
+    const key = url || fullName;
+    if (!fullName || seen.has(key)) continue;
+    seen.add(key);
+    const headline = liFirst(card, ["[data-test-row-lockup-headline]", "[data-live-test-row-lockup-headline]"]);
+    const lines = (card.innerText || "").split("\n").map((l) => l.trim()).filter(Boolean);
+    const job = liCurrentJob(lines, headline);
+    people.push({
+      ...liSplitName(fullName),
+      headline: job.title || headline,
+      company: job.company,
+      location: liFirst(card, ["[data-test-row-lockup-location]", "[data-live-test-row-lockup-location]"]),
+      email: "",
+      phone: "",
+      linkedinUrl: url,
+      notes: "",
+    });
+  }
+  const m = document.body.innerText.match(/(\d[\d.,]*)\s+(results|resultater|kandidater|candidates)\b/i);
+  return { people, total: m ? Number(m[1].replace(/[.,]/g, "")) : null };
 }

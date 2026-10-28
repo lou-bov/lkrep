@@ -112,29 +112,42 @@ async function addToQueue() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
 
+// HR-ON's applicant index is loaded once per popup and shared by everything that needs it.
+let indexPromise = null;
+function getIndex(force = false) {
+  if (force || !indexPromise) indexPromise = hronIndex(force);
+  return indexPromise;
+}
+let refreshBadges = () => {};
+
 // Shows whether the person already exists in HR-ON: which job postings, status and tags.
-async function checkHrOn(firstName, lastName) {
+async function checkHrOn(firstName, lastName, force = false) {
   const box = $("hronCheck");
   box.className = "check";
-  box.textContent = "Checking HR-ON…";
+  box.textContent = "Checking HR-ON… (the first check takes a few seconds)";
   if (!firstName && !lastName) return (box.textContent = "");
   try {
-    const { jobsSearched, matches } = await hronFindPerson(firstName, lastName);
+    const index = await getIndex(force);
+    const matches = hronMatches(index, firstName, lastName);
     box.textContent = "";
     if (!matches.length) {
       box.className = "check none";
-      box.append(`Not in HR-ON (searched ${jobsSearched} job postings by name).`);
+      box.append(`Not in HR-ON (checked ${index.rows.length} applications on ${index.jobs} job postings).`);
     } else {
       box.className = "check found";
       box.append(el("b", { textContent: `Already in HR-ON (${matches.length} application${matches.length > 1 ? "s" : ""})` }));
+      const tagsByCv = {};
       for (const m of matches) {
         const row = el("div", { className: "match" });
         row.append(
           el("a", { href: `${HRON}applications/company/?jobpostid=${m.jobId}`, target: "_blank", textContent: m.job }),
           ` — ${m.status || "?"}, ${m.date}`
         );
-        row.append(el("div", { className: "meta", textContent: `Tags: ${m.tags == null ? "could not read" : m.tags.join(", ") || "none"}` }));
+        const tagLine = el("div", { className: "meta", textContent: "Tags: …" });
+        row.append(tagLine);
         box.append(row);
+        tagsByCv[m.cvid] ??= hronTags(m.cvid, m.appid).catch(() => null);
+        tagsByCv[m.cvid].then((t) => (tagLine.textContent = `Tags: ${t == null ? "could not read" : t.join(", ") || "none"}`));
       }
     }
   } catch (e) {
@@ -144,9 +157,114 @@ async function checkHrOn(firstName, lastName) {
   const again = el("a", { href: "#", textContent: "Check again" });
   again.onclick = (ev) => {
     ev.preventDefault();
-    checkHrOn($("firstName").value.trim(), $("lastName").value.trim());
+    checkHrOn($("firstName").value.trim(), $("lastName").value.trim(), true).then(() => refreshBadges());
   };
   box.append(" ", again);
+}
+
+// Puts one person into the form and checks them in HR-ON.
+function loadPerson(p) {
+  for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) $(f).value = p[f] || "";
+  pendingCv = null;
+  $("cvStatus").textContent = "";
+  $("cvFile").value = "";
+  return checkHrOn(p.firstName, p.lastName);
+}
+
+// List pages (pipeline, project, search): everyone on the page, with their HR-ON status.
+function showPeople({ people, total }) {
+  const box = $("people");
+  box.classList.remove("hidden");
+  const more = total && total > people.length ? ` of ${total}. Scroll down the LinkedIn page and reopen this to load the rest` : "";
+  box.append(el("b", { textContent: `${people.length} people on this page${more}.` }));
+  box.append(el("div", { className: "meta", textContent: "Click a name to edit and add one person, or tick several and add them all to the queue." }));
+  const list = el("div", { className: "people-list" });
+  const rows = people.map((p) => {
+    const row = el("div", { className: "person" });
+    const chk = el("input", { type: "checkbox" });
+    const name = el("a", { href: "#", textContent: `${p.firstName} ${p.lastName}`.trim() });
+    name.onclick = (ev) => {
+      ev.preventDefault();
+      list.querySelectorAll(".person").forEach((r) => r.classList.remove("current"));
+      row.classList.add("current");
+      loadPerson(p);
+    };
+    const badge = el("span", { className: "badge", textContent: "…" });
+    const sub = el("div", { className: "meta", textContent: [p.headline, p.company].filter(Boolean).join(" · ") });
+    const text = el("div", { className: "who" });
+    text.append(name, " ", badge, sub);
+    row.append(chk, text);
+    list.append(row);
+    return { p, row, chk, badge };
+  });
+  rows[0]?.row.classList.add("current");
+  box.append(list);
+
+  refreshBadges = async () => {
+    try {
+      const index = await getIndex();
+      for (const r of rows) {
+        const m = hronMatches(index, r.p.firstName, r.p.lastName);
+        r.isNew = !m.length;
+        r.badge.className = `badge ${m.length ? "in" : "new"}`;
+        r.badge.textContent = m.length ? `In HR-ON: ${[...new Set(m.map((x) => x.job))].join(", ")}` : "New";
+      }
+    } catch (e) {
+      rows.forEach((r) => (r.badge.textContent = ""));
+    }
+  };
+  refreshBadges();
+
+  const selectNew = el("button", { className: "small secondary", textContent: "Select all new" });
+  selectNew.onclick = () => rows.forEach((r) => (r.chk.checked = !!r.isNew));
+  const addSel = el("button", { className: "small", textContent: "Add selected to queue" });
+  addSel.onclick = async () => {
+    const chosen = rows.filter((r) => r.chk.checked).map((r) => r.p);
+    if (!chosen.length) return msg("Tick the people to add first.");
+    const queue = await getQueue();
+    let added = 0;
+    for (const p of chosen) {
+      const dup = queue.some((q) => (p.linkedinUrl && q.linkedinUrl === p.linkedinUrl) || sameName(`${q.firstName} ${q.lastName}`, `${p.firstName} ${p.lastName}`));
+      if (dup) continue;
+      queue.push({ ...p, job: $("job").value.trim(), tags: $("tags").value.trim(), id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, addedAt: Date.now() });
+      added++;
+    }
+    await setQueue(queue);
+    msg(`Added ${added} to the queue` + (added < chosen.length ? ` (${chosen.length - added} already there)` : "") + `, with the job and tags below. ${queue.length} in the queue.`);
+  };
+  box.append(el("div", { className: "row-buttons" }));
+  box.lastChild.append(selectNew, addSel);
+}
+
+// HR-ON's existing tags as chips under the Tags field; click to add or remove one.
+async function showTagPicker() {
+  const box = $("tagPicker");
+  let tags = [];
+  try {
+    tags = await hronTagList(await getIndex());
+  } catch {
+    return; // HR-ON not reachable; the text field still works
+  }
+  const current = () => $("tags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  const chips = tags.map((tag) => {
+    const chip = el("button", { type: "button", className: "chip", textContent: tag });
+    chip.onclick = () => {
+      const list = current();
+      const i = list.findIndex((t) => t.toLowerCase() === tag.toLowerCase());
+      if (i >= 0) list.splice(i, 1);
+      else list.push(tag);
+      $("tags").value = list.join(", ");
+      sync();
+    };
+    return chip;
+  });
+  const sync = () => {
+    const list = current().map((t) => t.toLowerCase());
+    chips.forEach((c) => c.classList.toggle("on", list.includes(c.textContent.toLowerCase())));
+  };
+  $("tags").addEventListener("input", sync);
+  box.replaceChildren(...chips);
+  sync();
 }
 
 async function initLinkedIn(tab) {
@@ -164,15 +282,22 @@ async function initLinkedIn(tab) {
 
   let profile = {};
   try {
-    [{ result: profile }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractLinkedInProfile });
-    for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) {
-      $(f).value = profile[f] || "";
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["extract.js"] });
+    const onProfile = /\/profile\/|linkedin\.com\/in\//.test(tab.url);
+    let page = { people: [] };
+    if (!onProfile) [{ result: page }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => extractLinkedInList() });
+    if (page.people.length > 1) {
+      showPeople(page);
+      profile = page.people[0];
+    } else {
+      [{ result: profile }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => extractLinkedInProfile() });
+      if (!profile.email) msg("No email found. Open the profile's contact info, or type it in.");
     }
-    if (!profile.email) msg("No email found. Open the profile's contact info, or type it in.");
   } catch (e) {
-    msg("Could not read the profile: " + e.message);
+    msg("Could not read the page: " + e.message);
   }
-  checkHrOn($("firstName").value.trim(), $("lastName").value.trim()).then(async () => {
+  showTagPicker();
+  loadPerson(profile).then(async () => {
     // The check loads HR-ON's job list; offer it in the job picker.
     const have = new Set([...$("jobList").options].map((o) => o.value));
     for (const job of await getKnownJobs()) if (!have.has(job)) $("jobList").append(el("option", { value: job }));

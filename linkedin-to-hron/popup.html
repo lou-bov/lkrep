@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>LinkedIn → HR-ON</title>
 <style>
-  body { font: 13px/1.4 system-ui, sans-serif; width: 360px; margin: 0; padding: 12px; color: #1d1d1f; }
+  body { font: 13px/1.4 system-ui, sans-serif; width: 400px; margin: 0; padding: 12px; color: #1d1d1f; }
   body.page { width: auto; max-width: 720px; margin: 24px auto; }
   h1 { font-size: 15px; margin: 0 0 8px; }
   h2 { font-size: 13px; margin: 12px 0 4px; }
@@ -28,6 +28,21 @@
   .check.found { background: #fff4e5; color: #663c00; }
   .check.none { background: #e8f5e9; color: #1b5e20; }
   .check .match { margin-top: 4px; }
+  #people { margin-bottom: 8px; }
+  .people-list { max-height: 240px; overflow-y: auto; border: 1px solid #e5e5ea; border-radius: 6px; margin-top: 6px; }
+  .person { display: flex; gap: 6px; align-items: flex-start; padding: 5px 6px; border-bottom: 1px solid #f2f2f7; }
+  .person.current { background: #eef4fb; }
+  .person input { width: auto; margin-top: 2px; }
+  .person .who { flex: 1; min-width: 0; }
+  .person .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 11px; padding: 0 5px; border-radius: 8px; background: #e5e5ea; }
+  .badge.in { background: #fff4e5; color: #663c00; }
+  .badge.new { background: #e8f5e9; color: #1b5e20; }
+  .row-buttons { display: flex; gap: 4px; }
+  .tag-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; max-height: 110px; overflow-y: auto; }
+  .chip { width: auto; margin: 0; padding: 2px 8px; border: 1px solid #c7c7cc; border-radius: 10px; background: #fff; color: #1d1d1f; font-weight: 400; font-size: 12px; }
+  .chip.on { background: #0a66c2; border-color: #0a66c2; color: #fff; }
+  .row-buttons button { flex: 1; }
   a { color: #0a66c2; }
 </style>
 </head>
@@ -35,6 +50,7 @@
   <h1>LinkedIn → HR-ON</h1>
 
   <section id="linkedin" class="hidden">
+    <div id="people" class="hidden"></div>
     <div id="hronCheck" class="check"></div>
     <div class="row">
       <div><label for="firstName">First name</label><input id="firstName"></div>
@@ -50,7 +66,8 @@
     <h2>HR-ON</h2>
     <label for="job">Job</label><input id="job" list="jobList" placeholder="Job posting title in HR-ON">
     <datalist id="jobList"></datalist>
-    <label for="tags">Tags (comma-separated)</label><input id="tags">
+    <label for="tags">Tags (comma-separated, or click below)</label><input id="tags">
+    <div id="tagPicker" class="tag-picker"></div>
     <label for="notes">Note</label><textarea id="notes"></textarea>
 
     <h2>CV</h2>

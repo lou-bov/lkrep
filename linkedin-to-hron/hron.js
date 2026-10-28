@@ -2,6 +2,7 @@
 // pages make (job list, per-job applicant search, candidate tags).
 const HRON = "https://recruit.hr-on.com/";
 const JOBS_TTL_MS = 60 * 60 * 1000;
+const INDEX_TTL_MS = 30 * 60 * 1000;
 
 // Runs a request inside an open HR-ON tab (same origin, so the login cookie is
 // sent), or from the extension if no HR-ON tab is open.
@@ -77,36 +78,39 @@ async function hronJobs(force = false) {
   return list;
 }
 
-// Searches one job's applicants. Returns [{ name, cvid, appid, status, date }].
-async function hronSearchJob(jobId, term) {
+// Applicant rows on one page of a job's applicant list.
+function parseApplicantRows(html) {
+  return [...parseHtml(html).querySelectorAll("a.apname[data-cvid]")].map((a) => {
+    const tr = a.closest("tr");
+    return {
+      name: cleanText(a.textContent),
+      cvid: a.dataset.cvid,
+      appid: a.dataset.applicationid,
+      status: cleanText(tr?.querySelector(".statustitle")?.textContent),
+      // "7. Sep" + "<div class=year>2026</div>" → "7. Sep 2026"
+      date: cleanText([...(tr?.querySelector(".appdate")?.querySelectorAll("div") || [])].map((d) => d.firstChild?.textContent).join(" ")),
+    };
+  });
+}
+
+// Reads a job's applicant list page by page (searching for `term` if given).
+// Returns [{ name, cvid, appid, status, date }].
+async function hronApplicants(jobId, term = "") {
   const sess = Date.now();
   const path = (s, p) =>
-    `applications/company/?jobpostid=${jobId}&Applies_s=${encodeURIComponent(s ? "," + s : "")}` +
+    `applications/company/?jobpostid=${jobId}&list=normal&Applies_s=${encodeURIComponent(s ? "," + s : "")}` +
     `&appdate_from=&appdate_to=&Applies_advsearch=0&sess=${sess}&Applies_p=${p}&Applies_ajax`;
   const rows = new Map();
   try {
-    for (let p = 0; p < 5; p++) {
-      const doc = parseHtml(await hronRequest(path(term, p), { method: "POST", body: `sess=${sess}` }));
-      const links = [...doc.querySelectorAll("a.apname[data-cvid]")];
-      let added = 0;
-      for (const a of links) {
-        if (rows.has(a.dataset.applicationid)) continue;
-        const tr = a.closest("tr");
-        rows.set(a.dataset.applicationid, {
-          name: cleanText(a.textContent),
-          cvid: a.dataset.cvid,
-          appid: a.dataset.applicationid,
-          status: cleanText(tr?.querySelector(".statustitle")?.textContent),
-          // "7. Sep" + "<div class=year>2026</div>" → "7. Sep 2026"
-          date: cleanText([...(tr?.querySelector(".appdate")?.querySelectorAll("div") || [])].map((d) => d.firstChild?.textContent).join(" ")),
-        });
-        added++;
-      }
-      if (!added || links.length < 20) break;
+    for (let p = 0; p < 50; p++) {
+      const page = parseApplicantRows(await hronRequest(path(term, p), { method: "POST", body: `sess=${sess}` }));
+      const before = rows.size;
+      for (const r of page) if (!rows.has(r.appid)) rows.set(r.appid, r);
+      if (rows.size === before || page.length < 20) break;
     }
   } finally {
-    // HR-ON may remember the last search; clear it so the user's list isn't left filtered.
-    await hronRequest(path("", 0), { method: "POST", body: `sess=${sess}` }).catch(() => {});
+    // HR-ON may remember the last search and page; reset them so the user's list looks as usual.
+    if (term || rows.size >= 20) await hronRequest(path("", 0), { method: "POST", body: `sess=${sess}` }).catch(() => {});
   }
   return [...rows.values()];
 }
@@ -122,13 +126,27 @@ async function hronAddTags(cvid, appid, tags) {
   const before = await hronTags(cvid, appid);
   const has = (t) => before.some((b) => b.toLowerCase() === t.toLowerCase());
   const toAdd = tags.filter((t) => !has(t));
+  const refused = {};
   for (const tag of toAdd) {
-    const body = new URLSearchParams({ action: "add", cvid, tag }).toString();
-    await hronRequest("manager/cvtags.php?iframe=1", { method: "POST", body });
+    // Exactly what HR-ON's own "Add" button sends (cvtags.min.js).
+    const body = new URLSearchParams({ cvid, tag, action: "add", json: 1 }).toString();
+    const text = await hronRequest("manager/cvtags.php", { method: "POST", body });
+    let res = null;
+    try {
+      res = JSON.parse(text);
+    } catch {
+      /* checked against the candidate's tags below */
+    }
+    if (res && res.status !== "OK") refused[tag] = res.status;
   }
   const after = await hronTags(cvid, appid);
   const failed = toAdd.filter((t) => !after.some((a) => a.toLowerCase() === t.toLowerCase()));
-  return { added: toAdd.filter((t) => !failed.includes(t)), skipped: tags.filter(has), failed, tags: after };
+  return {
+    added: toAdd.filter((t) => !failed.includes(t)),
+    skipped: tags.filter(has),
+    failed: failed.map((t) => (refused[t] ? `${t} (${refused[t]})` : t)),
+    tags: after,
+  };
 }
 
 // Runs fn over items with at most `n` at a time.
@@ -155,7 +173,7 @@ async function hronFindPerson(firstName, lastName, onlyJobId = null) {
   let jobs = await hronJobs();
   if (onlyJobId) jobs = jobs.filter((j) => j.id === onlyJobId);
   const perJob = await mapLimit(jobs, 3, async (job) =>
-    (await hronSearchJob(job.id, term))
+    (await hronApplicants(job.id, term))
       .filter((r) => sameName(r.name, fullName))
       .map((r) => ({ ...r, jobId: job.id, job: job.title }))
   );
@@ -166,4 +184,38 @@ async function hronFindPerson(firstName, lastName, onlyJobId = null) {
     m.tags = tagsByCv[m.cvid];
   }
   return { jobsSearched: jobs.length, matches };
+}
+
+// Every applicant on every job posting, cached for 30 minutes, so many people
+// can be checked at once. [{ name, cvid, appid, status, date, jobId, job }]
+async function hronIndex(force = false) {
+  const { hronIndex: cache } = await chrome.storage.local.get("hronIndex");
+  if (!force && cache && Date.now() - cache.at < INDEX_TTL_MS) return cache;
+  const jobs = await hronJobs(force);
+  const perJob = await mapLimit(jobs, 3, async (job) =>
+    (await hronApplicants(job.id)).map((r) => ({ ...r, jobId: job.id, job: job.title }))
+  );
+  const index = { at: Date.now(), jobs: jobs.length, rows: perJob.flat() };
+  await chrome.storage.local.set({ hronIndex: index });
+  return index;
+}
+
+// Looks a person up in the index. Returns [{ ...application }] (no tags).
+function hronMatches(index, firstName, lastName) {
+  const fullName = `${firstName} ${lastName}`.trim();
+  return fullName ? index.rows.filter((r) => sameName(r.name, fullName)) : [];
+}
+
+// All tags used in HR-ON (the list HR-ON suggests in a candidate's Tags field).
+// Read from any candidate page; cached for an hour.
+async function hronTagList(index) {
+  const { hronTagList: cache } = await chrome.storage.local.get("hronTagList");
+  if (cache && Date.now() - cache.at < JOBS_TTL_MS) return cache.tags;
+  const any = index.rows[0];
+  if (!any) return [];
+  const html = await hronRequest(`view-cv/${any.cvid}/${any.appid}/?iframe`);
+  const m = html.match(/var tagSuggestions\s*=\s*(\[.*?\]);/s);
+  const tags = m ? JSON.parse(m[1]) : [];
+  await chrome.storage.local.set({ hronTagList: { at: Date.now(), tags } });
+  return tags;
 }
