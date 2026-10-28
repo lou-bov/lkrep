@@ -164,6 +164,7 @@ async function checkHrOn(firstName, lastName, force = false) {
 
 // Puts one person into the form and checks them in HR-ON.
 function loadPerson(p) {
+  $("editing").textContent = `Editing: ${`${p.firstName || ""} ${p.lastName || ""}`.trim() || "—"}`;
   for (const f of ["firstName", "lastName", "email", "phone", "headline", "company", "location", "linkedinUrl"]) $(f).value = p[f] || "";
   pendingCv = null;
   $("cvStatus").textContent = "";
@@ -177,17 +178,22 @@ function showPeople({ people, total }) {
   box.classList.remove("hidden");
   const more = total && total > people.length ? ` (${total} in total; go to the next results page for more)` : "";
   box.append(el("b", { textContent: `${people.length} people on this page${more}.` }));
-  box.append(el("div", { className: "meta", textContent: "Click a name to edit and add one person, or tick several and add them all to the queue." }));
+  box.append(el("div", { className: "meta", textContent: "Click a person to edit them in the form below, or tick several and add them all to the queue." }));
   const list = el("div", { className: "people-list" });
   const rows = people.map((p) => {
     const row = el("div", { className: "person" });
     const chk = el("input", { type: "checkbox" });
     const name = el("a", { href: "#", textContent: `${p.firstName} ${p.lastName}`.trim() });
-    name.onclick = (ev) => {
-      ev.preventDefault();
+    // Clicking the row (or ticking its box) loads that person into the form.
+    const select = () => {
       list.querySelectorAll(".person").forEach((r) => r.classList.remove("current"));
       row.classList.add("current");
       loadPerson(p);
+    };
+    row.onclick = (ev) => {
+      if (ev.target !== chk) ev.preventDefault();
+      if (ev.target === chk && !chk.checked) return;
+      select();
     };
     const badge = el("span", { className: "badge", textContent: "…" });
     const sub = el("div", { className: "meta", textContent: [p.headline, p.company].filter(Boolean).join(" · ") });

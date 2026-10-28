@@ -39,6 +39,9 @@
   .badge.in { background: #fff4e5; color: #663c00; }
   .badge.new { background: #e8f5e9; color: #1b5e20; }
   .row-buttons { display: flex; gap: 4px; }
+  .person { cursor: pointer; }
+  .editing { position: sticky; top: 0; z-index: 1; margin: 0 -12px 6px; padding: 6px 12px; background: #0a66c2; color: #fff; font-weight: 600; }
+  .editing:empty { display: none; }
   .tag-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; max-height: 110px; overflow-y: auto; }
   .chip { width: auto; margin: 0; padding: 2px 8px; border: 1px solid #c7c7cc; border-radius: 10px; background: #fff; color: #1d1d1f; font-weight: 400; font-size: 12px; }
   .chip.on { background: #0a66c2; border-color: #0a66c2; color: #fff; }
@@ -51,6 +54,7 @@
 
   <section id="linkedin" class="hidden">
     <div id="people" class="hidden"></div>
+    <div id="editing" class="editing"></div>
     <div id="hronCheck" class="check"></div>
     <div class="row">
       <div><label for="firstName">First name</label><input id="firstName"></div>
